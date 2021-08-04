@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html ng-app="eminer">
+<head>
+	<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+	<meta charset="utf-8">
+	<title>Eminer - Dashboard</title>
+	<meta name="generator" content="Bootply" />
+	<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+	<link href="//maxcdn.bootstrapcdn.com/bootswatch/3.3.7/cosmo/bootstrap.min.css" rel="stylesheet">
+	<!--[if lt IE 9]>
+	<script src="//html5shim.googlecode.com/svn/trunk/html5.js"></script>
+	<![endif]-->
+	<style>
+	html,
+	body {
+		height: 100%;
+	}
+
+	#wrap {
+		min-height: 100%;
+		height: auto !important;
+		height: 100%;
+		/* Negative indent footer by its height */
+		margin: 0 auto -60px;
+		/* Pad bottom by footer height */
+		padding: 0 0 60px;
+	}
+
+	#footer {
+		height: 60px;
+		background-color: #f5f5f5;
+		padding: 20px;
+	}
+
+	#wrap > .container {
+		padding: 60px 15px 0;
+	}
+	.container .credit {
+		margin: 20px 0;
+	}
+
+	#footer > .container {
+		padding-left: 15px;
+		padding-right: 15px;
+	}
+
+	code {
+		font-size: 80%;
+	}
+
+	.row-centered {
+		margin: auto;
+		max-width: 100%;
+		margin-top: 5%;
+	}
+
+	.col-md-4 {
+		text-align: center;
+	}
+
+	.border {
+		border-right: 2px solid #e7e7e7;
+		padding-right: 5px;
+		padding-left: 5px;
+	}
+
+	h3.text-success {
+		font-size: 24px;
+	}
+
+	.panel {
+		min-height: 230px;
+	}
+
+	.page-header {
+		margin-top: 30px;
+	}
+
+	h4 {
+		font-size: 18px;
+	}
+	</style>
+	<script src="//cdnjs.cloudflare.com/ajax/libs/angular.js/1.6.4/angular.js"></script>
+</head>
+<body ng-controller="statsCtrl">
+	<!-- Wrap all page content here -->
+	<div id="wrap">
+
+		<!-- Fixed navbar -->
+		<div class="navbar navbar-default navbar-fixed-top">
+			<div class="container">
+				<div class="navbar-header">
+					<button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".navbar-collapse">
+						<span class="icon-bar"></span>
+						<span class="icon-bar"></span>
+						<span class="icon-bar"></span>
+					</button>
+					<a class="navbar-brand" href="/">Eminer ([[.worker_name]])</a>
+				</div>
+				<div class="collapse navbar-collapse">
+					<ul class="nav navbar-nav">
+						<li class="active"><a href="/">Dashboard</a></li>
+						<li><a href="#help">Help</a></li>
+					</ul>
+					<ul class="nav navbar-nav navbar-right">
+					<li><a href="https://github.com/ethash/eminer-release" target="_blank" style="padding-top:10px;padding-bottom:3px"><svg  style="fill:white" aria-hidden="true" height="32" version="1.1" viewBox="0 0 16 16" width="32"><path fill-rule="evenodd" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"></path></svg></a></li>
+					</ul>
+				</div>
+			</div>
+		</div>
+		<!-- Begin page content -->
+		<div class="container">
+			<div ng-if="stats.error" class="alert alert-danger">
+				<button type="button" class="close" data-dismiss="alert" aria-label="Close">
+  					<span aria-hidden="true">&times;</span>
+				</button>
+				{{stats.error}}
+			</div>
+			<div ng-if="dataError" class="alert alert-danger">
+				<button type="button" class="close" data-dismiss="alert" aria-label="Close">
+  					<span aria-hidden="true">&times;</span>
+				</button>
+				Stats couldn't fetch. Possible internet connection problem or miner down.
+			</div>
+			<div class="page-header">
+				<h3>Mining Global Report</h3>
+			</div>
+			<div class="row">
+				<div class="col-md-4">
+					<div class="panel panel-default">
+						<div class="panel-heading">Total Hashrate (mean)</div>
+						<div class="panel-body" style="margin-top:2%;">
+							<div class="row row-centered">
+								<div class="col-md-12">
+									<h1 class="text-success" style="font-size:50px">{{Math.round((stats.total_hashrate_mean/1000/1000) * 100)/100}} Mh/s</h1>
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+				<div class="col-md-4">
+					<div class="panel panel-default">
+						<div class="panel-heading">Solutions</div>
+						<div class="panel-body">
+							<div class="row row-centered">
+								<div class="col-md-4 border">
+									<h3 class="text-success">Accepted</h3>
+									<h4 class="bold">{{stats.found_solutions-stats.rejected_solutions}}</h4>
+								</div>
+								<div class="col-md-4 border">
+									<h3 class="text-success">Rejected</h3>
+									<h4 class="bold">{{stats.rejected_solutions}}</h4>
+								</div>
+								<div class="col-md-4">
+									<h3 class="text-success">Invalid</h3>
+									<h4 class="bold">{{stats.invalid_solutions}}</h4>
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+				<div class="col-md-4">
+					<div class="panel panel-default">
+						<div class="panel-heading">Current Work</div>
+						<div class="panel-body" id="memory">
+							<div class="row row-centered">
+								<div class="col-md-4 border">
+									<h3 class="text-success">Epoch</h3>
+									<h4>{{stats.current_work.epoch}}</h4>
+								</div>
+								<div class="col-md-4 border">
+									<h3 class="text-success">Header</h3>
+									<h4>#{{stats.current_work.header_hash | limitTo:6:2}}</h4>
+								</div>
+								<div class="col-md-4">
+									<h3 class="text-success">Difficulty</h3>
+									<h4>{{Math.round((stats.current_work.difficulty/1000/1000/1000) * 100) / 100}} <small>GH</small><br></h4>
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+			<div class="panel panel-default">
+				<div class="panel-body">
+					<div class="highchart" id="graph" style="height:400px" opts="{navigator:{series:{type:'areaspline',color:'#199900',lineWidth:1, fillOpacity: 0.1}},scrollbar:{enabled:true,barBorderRadius:2,barBorderWidth:1,buttonBorderRadius:2,trackBackgroundColor:'none',trackBorderWidth:2},rangeSelector:{buttons:[{count:15,type:'minute',text:'15m'},{count:1,type:'hour',text:'1h'},{count:3,type:'hour',text:'3h'},{count:6,type:'hour',text:'6h'},{count:12,type:'hour',text:'12h'},{count:1,type:'day',text:'1d'},{type: 'all',text: 'All'}],inputEnabled: false,selected: 4},legend:{enabled:false},xAxis:{type:'datetime'},yAxis:[{opposite:false,labels:{align:'left',x: 3},height:'70%',title:{text:'Hashrate (Mh/s)'},lineWidth:2},{opposite:false,labels:{align:'left',x: 3},title:{text:'Solutions'},top:'75%',height:'25%',offset:0,lineWidth:2}],plotOptions:{area:{color:'#20BF00',lineColor:'#199900',lineWidth:2,marker:{lineWidth:3,lineColor:'#ffffff'}},column:{color:'#445878',lineColor:'#445878',lineWidth:2,marker:{lineWidth:3,lineColor:'#ffffff'}},series:{animation:false}},series:[]}" data="chartData">
+					</div>
+				</div>
+			</div>
+
+			<div class="page-header">
+				<h3>Devices</h3>
+			</div>
+			<div class="table-responsive">
+				<table class="table table-bordered">
+					<thead>
+						<tr>
+							<th>#</th>
+							<th>Name</th>
+							<th>Engine Clock</th>
+							<th>Memory Clock</th>
+							<th>Memory</th>
+							<th>Hashrate (mean)</th>
+							<th>Temperature</th>
+							<th>Fan Speed</th>
+							<!-- <th></th> -->
+						</tr>
+					</thead>
+					<tbody>
+						<tr ng-repeat="device in stats.devices">
+							<td width="1%">{{$index}}</td>
+							<td>{{device.name}}</td>
+							<td>{{device.engine_clock > 0 ? device.engine_clock : device.max_clock}} MHz</td>
+							<td>{{device.memory_clock}} MHz</td>
+							<td>{{Math.round(device.memory/1024/1024)}} MB</td>
+							<td>{{Math.round((device.hashrate_mean/1000/1000) * 100)/100}} Mh/s</td>
+							<td>{{Math.round(device.temperature * 100)/100}}°</td>
+							<td>{{Math.round(device.fan_percent)}}%</td>
+							<!-- <td width="1%"><button class="btn btn-sm btn-primary"><span class="glyphicon glyphicon-signal"></span></button></td> -->
+						</tr>
+						<tr ng-show="isEmpty(stats.devices)">
+							<td colspan="8"><p class="text-danger text-center">No devices found</p></td>
+						</tr>
+					</tbody>
+				</table>
+			</div>
+		</div>
+	</div>
+
+	<div id="footer">
+		<div class="container">
+			<div class="pull-left">
+				<span class="text-muted credit"><b><a href="https://github.com/ethash/eminer-release" target="_blank">Eminer</a> ([[.worker_name]])</b>   <b>Donations</b> ETH/ETC: <a href="https://etherscan.io/address/0x4e6f8135f909a943344f065a9ec2bedcc14c750d" target="_blank">0x4e6f8135f909a943344f065a9ec2bedcc14c750d</a>
+			</div>
+			<div class="pull-right">
+				<span class="text-muted"><b>uptime</b> {{stats.uptime}} (v[[.version]])</span>
+			</div>
+			<div class="clearfix"></div>
+		</div>
+	</div>
+
+	<script src="//code.jquery.com/jquery.min.js"></script>
+	<script src="//netdna.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js"></script>
+	<script src="//cdnjs.cloudflare.com/ajax/libs/highcharts/5.0.12/highstock.js"></script>
+	<script>
+	var app = angular.module('eminer', []);
+
+	app.directive('highchart', function() {
+		return {
+			restrict: 'CA',
+			scope: {
+				data: '=',
+			},
+			link: function(scope, elm, attrs) {
+				scope.$watch("data", function(newValue) {
+					if (newValue == undefined) return;
+					opts = scope.$eval(attrs.opts);
+					opts.series = newValue;
+					Highcharts.stockChart(elm.attr('id'), opts);
+				}, true);
+			}
+		};
+	});
+
+	app.controller('statsCtrl', function($scope, $http, $timeout) {
+		$scope.Math = window.Math;
+		$scope.dataError = false;
+
+		var groupingUnits = [ [
+            'minute',
+            [10]
+        ] ];
+
+		$scope.chartData = [
+			{"name":"Hashrate", "type":"area", "dataGrouping":{"force":true, "units": groupingUnits}, "tooltip":{"pointFormat":'<span style="color:{point.color}">\u25CF</span>  {series.name}: <b>{point.y:.2f} Mh/s</b><br/>'}, "data":[]},
+			{"name":"Solutions", "type":"column", "yAxis": 1, "dataGrouping":{"force":true, "units": groupingUnits}, "data":[]}
+		];
+
+		$scope.getStats = function(){
+			var httpRequest = $http({
+				method: 'GET',
+				url: '/api/v1/stats'
+
+			}).then(function(response) {
+				$scope.dataError = false;
+				$scope.stats = response.data;
+			},function(){
+				$scope.dataError = true;
+			});
+		};
+
+		$scope.getChartData = function(){
+			var solutionKey = $scope.stats.worker_name+".solutions.found"
+			var totalHasrateKey = $scope.stats.worker_name+".total.hashrate"
+
+			var httpRequest = $http({
+				method: 'GET',
+				url: '/api/v1/chartData?series='+totalHasrateKey+','+solutionKey
+
+			}).then(function(response) {
+				if (response.data[totalHasrateKey]) {
+					$scope.chartData[0].data = response.data[totalHasrateKey];
+					$scope.chartData[1].data = response.data[solutionKey];
+				}
+			});
+		};
+
+		$scope.getStats();
+
+		setTimeout(function(){
+			$scope.getChartData();
+		}, 1000);
+
+		$scope.statsInterval = function(){
+			$timeout(function() {
+				$scope.getStats();
+				$scope.statsInterval();
+			}, 5000)
+		};
+
+		$scope.chartInterval = function(){
+			$timeout(function() {
+				$scope.getChartData();
+				$scope.chartInterval();
+			}, 60000)
+		};
+
+		$scope.isEmpty = function(obj) {
+			if (obj == null) return true;
+			if (obj.length > 0)    return false;
+			if (obj.length === 0)  return true;
+			for (var key in obj) {
+				if (hasOwnProperty.call(obj, key)) return false;
+			}
+			return true;
+		};
+
+		$scope.substr = function(str, p, s) {
+			return str.substr(p, s);
+		};
+
+		$scope.statsInterval();
+		$scope.chartInterval();
+	});
+	</script>
+</body>
+</html>
