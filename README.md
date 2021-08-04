@@ -2,7 +2,7 @@
 Optimized, high performance multiworker ethash miner written in Go language.
 
 ### Dashboard
-![dashboard](https://raw.githubusercontent.com/ethash/eminer-release/master/dashboard.png)
+![dashboard](https://raw.githubusercontent.com/ethash/eminer/master/dashboard.png)
 
 ## Features
 - Fully support AMD and NVIDIA OpenCL devices
