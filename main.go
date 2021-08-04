@@ -48,7 +48,7 @@ var (
 
 var (
 	devicesTypesForMining = cl.DeviceTypeGPU
-	version               = "0.6.1-rc2"
+	version               = "1.0"
 	httpServer            = &http.Server{}
 	virtualTerm           = false
 )
