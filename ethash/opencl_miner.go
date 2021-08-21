@@ -848,12 +848,13 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 			}
 			d.Unlock()
 
+			var event *cl.Event
 			var nfound uint32
 			var results []byte
 
 			cres := new(cl.MappedMemObject)
 
-			cres, _, err = d.queueWorkers[s.bufIndex].EnqueueMapBuffer(d.searchBuffers[s.bufIndex], true,
+			cres, event, err = d.queueWorkers[s.bufIndex].EnqueueMapBuffer(d.searchBuffers[s.bufIndex], false,
 				cl.MapFlagRead, 0, (1+maxSearchResults)*sizeOfUint32,
 				nil)
 			if err != nil {
@@ -867,12 +868,14 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 				continue
 			}
 
-			d.RLock()
-			if s.workChanged {
+			for !event.ExecutionCompleted() {
+				d.RLock()
+				if s.workChanged {
+					d.RUnlock()
+					goto workch
+				}
 				d.RUnlock()
-				goto workch
 			}
-			d.RUnlock()
 
 			results = cres.ByteSlice()
 			nfound = binary.LittleEndian.Uint32(results)
