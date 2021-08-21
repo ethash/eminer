@@ -271,20 +271,10 @@ __kernel void seal(
 
 		#pragma unroll 1
 		for (uint a = 0; a < ACCESSES; a += 4) {
-			if (abort) {
-				g_output[0] = 0;
-				return;
-			}
-
 			bool update_share = thread_id == ((a >> 2) % THREADS);
 
 			#pragma unroll
 			for (uint i = 0; i != 4; ++i) {
-				if (abort) {
-					g_output[0] = 0;
-					return;
-				}
-				
 				if (update_share) {
 					share->uints[0] = FNV(init0 ^ (a + i), ((uint *)&mix)[i]) % DAG_SIZE;
 				}

@@ -271,20 +271,10 @@ __kernel void seal(
 
 		#pragma unroll 1
 		for (uint a = 0; a < ACCESSES; a += 16) {
-			if (abort) {
-				g_output[0] = 0;
-				return;
-			}
-
 			bool update_share = thread_id == ((a >> 4) % THREADS);
 
 			#pragma unroll
 			for (uint i = 0; i != 16; ++i) {
-				if (abort) {
-					g_output[0] = 0;
-					return;
-				}
-
 				if (update_share) {
 					share->uints[0] = FNV(init0 ^ (a + i), ((uint *)&mix)[i]) % DAG_SIZE;
 				}
@@ -297,10 +287,6 @@ __kernel void seal(
 				}
 
 				for (uint x = 0; x < 16; x++) {
-					if (abort) {
-						g_output[0] = 0;
-						return;
-					}
 					mix[x] = FNV(mix[x], g_dag[share->uints[0] >> 1].uint16s[thread_id][x]);
 				}
 				barrier(CLK_LOCAL_MEM_FENCE);
