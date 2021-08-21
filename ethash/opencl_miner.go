@@ -852,6 +852,11 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 				continue
 			}
 
+			if s.workChanged {
+				d.queueWorkers[s.bufIndex].EnqueueUnmapMemObject(d.searchBuffers[s.bufIndex], cres, nil)
+				continue
+			}
+
 			results := cres.ByteSlice()
 			nfound := binary.LittleEndian.Uint32(results)
 			nfound = uint32(math.Min(float64(nfound), float64(maxSearchResults)))
@@ -958,7 +963,6 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 			return err
 
 		case <-c.workCh:
-
 			c.Lock()
 			//if the new target > then current one change immediately
 			if target256.Cmp(c.Work.Target256) > 0 {
