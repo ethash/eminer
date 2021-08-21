@@ -72,7 +72,6 @@ type OpenCLDevice struct {
 	kernel         *kernel
 	globalWorkSize uint64
 	workGroupSize  uint64
-	intensity      int
 
 	roundCount counter.Counter
 
@@ -173,7 +172,7 @@ func NewCL(deviceIds []int, workerName, version string) *OpenCLMiner {
 func (c *OpenCLMiner) InitCL() error {
 	platforms, err := cl.GetPlatforms()
 	if err != nil {
-		return fmt.Errorf("Plaform error: %v\nCheck your OpenCL installation and drivers and then run eminer -L", err)
+		return fmt.Errorf("plaform error: %v\ncheck your OpenCL installation and drivers and then run eminer -L", err)
 	}
 
 	var devices []*cl.Device
@@ -214,7 +213,7 @@ func (c *OpenCLMiner) InitCL() error {
 
 	for i, id := range c.deviceIds {
 		if id > len(devices)-1 {
-			return fmt.Errorf("Device id not found. See available device ids with: eminer -L")
+			return fmt.Errorf("device id not found. see available device ids with: eminer -L")
 		}
 
 		wg.Add(1)
@@ -231,7 +230,7 @@ func (c *OpenCLMiner) InitCL() error {
 	}
 
 	if len(c.devices) == 0 {
-		return fmt.Errorf("No devices found")
+		return fmt.Errorf("no devices found")
 	}
 
 	return nil
@@ -270,7 +269,7 @@ func (c *OpenCLMiner) initCLDevice(idx, deviceID int, device *cl.Device) error {
 
 	// log warnings but carry on; some device drivers report inaccurate values
 	if c.dagSize > devGlobalMem {
-		return fmt.Errorf("Device memory may be insufficient, Max device memory size: %v DAG size: %v", devGlobalMem, c.dagSize)
+		return fmt.Errorf("device memory may be insufficient, max device memory size: %v DAG size: %v", devGlobalMem, c.dagSize)
 	}
 
 	context, err := cl.CreateContext([]*cl.Device{device})
@@ -479,7 +478,7 @@ func (c *OpenCLMiner) createProgramOnDevice(d *OpenCLDevice) (err error) {
 func (c *OpenCLMiner) generateDAGOnDevice(d *OpenCLDevice) error {
 	devGlobalMem := uint64(d.device.GlobalMemSize())
 	if c.dagSize > devGlobalMem {
-		return fmt.Errorf("Device memory may be insufficient, Max device memory size: %v DAG size: %v", devGlobalMem, c.dagSize)
+		return fmt.Errorf("device memory may be insufficient, max device memory size: %v DAG size: %v", devGlobalMem, c.dagSize)
 	}
 
 	dagKernelFunc := "generate_dag_item"
@@ -569,7 +568,7 @@ func (c *OpenCLMiner) generateDAGOnDevice(d *OpenCLDevice) error {
 
 		err = cl.WaitForEvents([]*cl.Event{event})
 		if err != nil {
-			return fmt.Errorf("Error in queue wait events %v", err)
+			return fmt.Errorf("error in queue wait events %v", err)
 		}
 
 		elapsed := time.Now().UnixNano() - start
@@ -671,11 +670,7 @@ func (c *OpenCLMiner) Release(deviceID int) {
 func (c *OpenCLMiner) CmpDagSize(work *Work) bool {
 	newDagSize := datasetSize(work.BlockNumberU64())
 
-	if newDagSize != c.dagSize {
-		return true
-	}
-
-	return false
+	return newDagSize != c.dagSize
 }
 
 // Seal hashes on GPU
@@ -1109,8 +1104,6 @@ func (c *OpenCLMiner) Poll() {
 			d.memoryclock.Update(int64(nvml.MemoryClock(d.busNumber)))
 		}
 	}
-
-	return
 }
 
 // SetFanPercent set fan speed percent for selected devices
@@ -1213,8 +1206,8 @@ func (c *OpenCLMiner) MarshalJSON() ([]byte, error) {
 
 	data["current_work"] = c.Work
 	data["worker_name"] = c.workerName
-	data["uptime"] = durafmt.Parse(time.Now().Sub(c.uptime).Round(time.Second)).String()
-	data["uptime_secs"] = time.Now().Sub(c.uptime).Seconds()
+	data["uptime"] = durafmt.Parse(time.Since(c.uptime).Round(time.Second)).String()
+	data["uptime_secs"] = time.Since(c.uptime).Seconds()
 	data["found_solutions"] = c.FoundSolutions.Count()
 	data["rejected_solutions"] = c.RejectedSolutions.Count()
 	data["invalid_solutions"] = c.InvalidSolutions.Count()
@@ -1259,7 +1252,7 @@ func replaceWords(text string, kvs map[string]string) string {
 }
 
 func kernelSource(name string) string {
-	kernel, err := Asset(name)
+	kernel, err := Asset("cl/" + name)
 	if err != nil {
 		return ""
 	}
