@@ -160,6 +160,8 @@ func Farm(stopChan <-chan struct{}) {
 					miner.Lock()
 					miner.Work = wt
 					miner.Unlock()
+
+					miner.WorkChanged()
 				}
 			}
 		}
@@ -233,6 +235,7 @@ func Farm(stopChan <-chan struct{}) {
 		httpServer.SetMiner(miner)
 	}
 
+	miner.WorkChanged()
 	miner.Poll()
 
 	for {

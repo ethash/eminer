@@ -105,6 +105,8 @@ func Benchmark(stopChan chan struct{}) {
 	go seal()
 	go reportHashRate()
 
+	miner.WorkChanged()
+
 	if *flaghttp != "" && *flaghttp != "no" {
 		httpServer.SetMiner(miner)
 	}

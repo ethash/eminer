@@ -128,6 +128,8 @@ func Stratum(stopChan <-chan struct{}) {
 					miner.Work = wt
 					miner.Unlock()
 				}
+
+				miner.WorkChanged()
 			}
 		}
 	}
@@ -199,6 +201,8 @@ func Stratum(stopChan <-chan struct{}) {
 	if *flaghttp != "" && *flaghttp != "no" {
 		httpServer.SetMiner(miner)
 	}
+
+	miner.WorkChanged()
 
 	miner.Poll()
 
