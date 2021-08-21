@@ -220,8 +220,13 @@ __kernel void seal(
 	__global hash128_t const* g_dag1,
 	__global hash128_t const* g_dag2,
 	ulong start_nonce,
-	ulong target
+	ulong target,
+	uint abort
 	) {
+
+	if (abort) {
+		return;
+	}
 
 	uint const gid = get_global_id(0);
 	uint const thread_id = gid % THREADS;
@@ -247,6 +252,10 @@ __kernel void seal(
 
 	#pragma unroll 1
 	for (uint tid = 0; tid < THREADS; tid++) {
+		if (abort) {
+			return;
+		}
+
 		if (tid == thread_id) {
 			share->data = ((uint16*)state)[0];
 		}
@@ -260,6 +269,10 @@ __kernel void seal(
 
 		#pragma unroll 1
 		for (uint a = 0; a < ACCESSES; a += 4) {
+			if (abort) {
+				return;
+			}
+
 			bool update_share = thread_id == ((a >> 2) % THREADS);
 
 			#pragma unroll
