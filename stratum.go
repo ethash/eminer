@@ -127,9 +127,9 @@ func Stratum(stopChan <-chan struct{}) {
 					miner.Lock()
 					miner.Work = wt
 					miner.Unlock()
-				}
 
-				miner.WorkChanged()
+					miner.WorkChanged()
+				}
 			}
 		}
 	}
@@ -203,7 +203,6 @@ func Stratum(stopChan <-chan struct{}) {
 	}
 
 	miner.WorkChanged()
-
 	miner.Poll()
 
 	for {
