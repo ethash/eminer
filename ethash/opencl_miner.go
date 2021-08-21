@@ -565,10 +565,6 @@ func (c *OpenCLMiner) generateDAGOnDevice(d *OpenCLDevice) error {
 			return fmt.Errorf("queue flush failed %v", err)
 		}
 
-		for !event.ExecutionCompleted() {
-			time.Sleep(1e3 * time.Nanosecond)
-		}
-
 		err = cl.WaitForEvents([]*cl.Event{event})
 		if err != nil {
 			return fmt.Errorf("error in queue wait events %v", err)
