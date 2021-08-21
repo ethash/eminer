@@ -497,7 +497,7 @@ func (c *OpenCLMiner) generateDAGOnDevice(d *OpenCLDevice) error {
 	dagSize1 := c.dagSize / 2
 	dagSize2 := c.dagSize / 2
 
-	if blockNum&1 > 0 {
+	if c.dagSize/mixBytes&1 > 0 {
 		dagSize1 = c.dagSize/2 + 64
 		dagSize2 = c.dagSize/2 - 64
 	}
