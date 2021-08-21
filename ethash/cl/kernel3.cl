@@ -225,6 +225,7 @@ __kernel void seal(
 	) {
 
 	if (abort) {
+		g_output[0] = 0;
 		return;
 	}
 
@@ -253,6 +254,7 @@ __kernel void seal(
 	#pragma unroll 1
 	for (uint tid = 0; tid < THREADS; tid++) {
 		if (abort) {
+			g_output[0] = 0;
 			return;
 		}
 
@@ -270,6 +272,7 @@ __kernel void seal(
 		#pragma unroll 1
 		for (uint a = 0; a < ACCESSES; a += 16) {
 			if (abort) {
+				g_output[0] = 0;
 				return;
 			}
 
@@ -319,6 +322,10 @@ __kernel void seal(
 	keccak_f1600(state, 1);
 
 	if (SWAP64(state[0]) < target) {
+		if (abort) {
+			g_output[0] = 0;
+			return;
+		}		
 		uint slot = min((uint)MAX_OUTPUTS, atomic_inc(&g_output[0]) + 1);
 		g_output[slot] = gid;
 	}
