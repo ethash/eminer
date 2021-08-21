@@ -184,8 +184,8 @@ func Stratum(stopChan <-chan struct{}) {
 	var wg sync.WaitGroup
 	stopFarmMine := make(chan struct{}, len(deviceIds))
 	for _, deviceID := range deviceIds {
+		wg.Add(1)
 		go func(deviceID int) {
-			wg.Add(1)
 			defer wg.Done()
 
 			farmMineByDevice(miner, deviceID, sc, stopFarmMine)
@@ -209,7 +209,7 @@ func Stratum(stopChan <-chan struct{}) {
 			stopShareInfo <- struct{}{}
 			stopReportHashRate <- struct{}{}
 
-			for _ = range deviceIds {
+			for range deviceIds {
 				stopFarmMine <- struct{}{}
 			}
 
@@ -219,7 +219,7 @@ func Stratum(stopChan <-chan struct{}) {
 			sc.Close(true)
 			return
 		case <-changeDAG:
-			for _ = range deviceIds {
+			for range deviceIds {
 				stopFarmMine <- struct{}{}
 			}
 
@@ -244,8 +244,8 @@ func Stratum(stopChan <-chan struct{}) {
 			miner.Resume()
 
 			for _, deviceID := range deviceIds {
+				wg.Add(1)
 				go func(deviceID int) {
-					wg.Add(1)
 					defer wg.Done()
 
 					farmMineByDevice(miner, deviceID, sc, stopFarmMine)

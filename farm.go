@@ -61,13 +61,10 @@ func farmMineByDevice(miner *ethash.OpenCLMiner, deviceID int, c client.Client, 
 
 	go seal()
 
-	select {
-	case <-stopChan:
-		stopSeal <- struct{}{}
-		stopSealFunc <- struct{}{}
-	}
+	<-stopChan
 
-	return
+	stopSeal <- struct{}{}
+	stopSealFunc <- struct{}{}
 }
 
 // Farm mode
@@ -220,8 +217,8 @@ func Farm(stopChan <-chan struct{}) {
 	var wg sync.WaitGroup
 	stopFarmMine := make(chan struct{}, len(deviceIds))
 	for _, deviceID := range deviceIds {
+		wg.Add(1)
 		go func(deviceID int) {
-			wg.Add(1)
 			defer wg.Done()
 
 			farmMineByDevice(miner, deviceID, rc, stopFarmMine)
@@ -245,7 +242,7 @@ func Farm(stopChan <-chan struct{}) {
 			stopShareInfo <- struct{}{}
 			stopReportHashRate <- struct{}{}
 
-			for _ = range deviceIds {
+			for range deviceIds {
 				stopFarmMine <- struct{}{}
 			}
 
@@ -253,7 +250,7 @@ func Farm(stopChan <-chan struct{}) {
 			miner.Destroy()
 			return
 		case <-changeDAG:
-			for _ = range deviceIds {
+			for range deviceIds {
 				stopFarmMine <- struct{}{}
 			}
 
@@ -277,8 +274,8 @@ func Farm(stopChan <-chan struct{}) {
 			miner.Resume()
 
 			for _, deviceID := range deviceIds {
+				wg.Add(1)
 				go func(deviceID int) {
-					wg.Add(1)
 					defer wg.Done()
 
 					farmMineByDevice(miner, deviceID, rc, stopFarmMine)

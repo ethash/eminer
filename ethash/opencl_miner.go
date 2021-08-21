@@ -140,9 +140,9 @@ const (
 var searchBufSize int
 
 var kernels = []*kernel{
-	&kernel{id: 1, source: kernelSource("kernel1.cl"), threadCount: 4},
-	&kernel{id: 2, source: kernelSource("kernel2.cl"), threadCount: 8},
-	&kernel{id: 3, source: kernelSource("kernel3.cl"), threadCount: 2},
+	{id: 1, source: kernelSource("kernel1.cl"), threadCount: 4},
+	{id: 2, source: kernelSource("kernel2.cl"), threadCount: 8},
+	{id: 3, source: kernelSource("kernel3.cl"), threadCount: 2},
 }
 
 //NewCL func

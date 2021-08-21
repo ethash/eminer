@@ -43,14 +43,12 @@ var (
 
 	flagengineclock = flag.String("engine-clock", "", "Set engine clock on selected devices, use comma for multiple devices (amd devices only)")
 	flagmemoryclock = flag.String("memory-clock", "", "Set memory clock on selected devices, use comma for multiple devices (amd devices only)")
-
 )
 
 var (
-	devicesTypesForMining = cl.DeviceTypeGPU
-	version               = "1.0"
-	httpServer            = &http.Server{}
-	virtualTerm           = false
+	version     = "1.1"
+	httpServer  = &http.Server{}
+	virtualTerm = false
 )
 
 // ListDevices list devices from OpenCL
@@ -197,7 +195,6 @@ func main() {
 		log.Info("Stathat registered for metrics", "email", *flagstathat)
 	}
 
-
 	stopChan := make(chan struct{})
 	var mode string
 
@@ -240,7 +237,7 @@ wait:
 	}
 
 	signalChan := make(chan os.Signal, 1)
-	signal.Notify(signalChan, os.Interrupt, os.Kill)
+	signal.Notify(signalChan, os.Interrupt)
 
 	select {
 	case <-signalChan:

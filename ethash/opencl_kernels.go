@@ -6,7 +6,6 @@
 
 package ethash
 
-
 import (
 	"bytes"
 	"compress/gzip"
@@ -38,7 +37,6 @@ func bindataRead(data []byte, name string) ([]byte, error) {
 
 	return buf.Bytes(), nil
 }
-
 
 type asset struct {
 	bytes []byte
@@ -89,8 +87,6 @@ func bindataClKernel1ClBytes() ([]byte, error) {
 	)
 }
 
-
-
 func bindataClKernel1Cl() (*asset, error) {
 	bytes, err := bindataClKernel1ClBytes()
 	if err != nil {
@@ -98,11 +94,11 @@ func bindataClKernel1Cl() (*asset, error) {
 	}
 
 	info := bindataFileInfo{
-		name: "cl/kernel1.cl",
-		size: 8198,
+		name:        "cl/kernel1.cl",
+		size:        8198,
 		md5checksum: "",
-		mode: os.FileMode(420),
-		modTime: time.Unix(1629557659, 0),
+		mode:        os.FileMode(420),
+		modTime:     time.Unix(1629557659, 0),
 	}
 
 	a := &asset{bytes: bytes, info: info}
@@ -119,8 +115,6 @@ func bindataClKernel2ClBytes() ([]byte, error) {
 	)
 }
 
-
-
 func bindataClKernel2Cl() (*asset, error) {
 	bytes, err := bindataClKernel2ClBytes()
 	if err != nil {
@@ -128,11 +122,11 @@ func bindataClKernel2Cl() (*asset, error) {
 	}
 
 	info := bindataFileInfo{
-		name: "cl/kernel2.cl",
-		size: 8165,
+		name:        "cl/kernel2.cl",
+		size:        8165,
 		md5checksum: "",
-		mode: os.FileMode(420),
-		modTime: time.Unix(1629557913, 0),
+		mode:        os.FileMode(420),
+		modTime:     time.Unix(1629557913, 0),
 	}
 
 	a := &asset{bytes: bytes, info: info}
@@ -149,8 +143,6 @@ func bindataClKernel3ClBytes() ([]byte, error) {
 	)
 }
 
-
-
 func bindataClKernel3Cl() (*asset, error) {
 	bytes, err := bindataClKernel3ClBytes()
 	if err != nil {
@@ -158,18 +150,17 @@ func bindataClKernel3Cl() (*asset, error) {
 	}
 
 	info := bindataFileInfo{
-		name: "cl/kernel3.cl",
-		size: 8305,
+		name:        "cl/kernel3.cl",
+		size:        8305,
 		md5checksum: "",
-		mode: os.FileMode(420),
-		modTime: time.Unix(1629557876, 0),
+		mode:        os.FileMode(420),
+		modTime:     time.Unix(1629557876, 0),
 	}
 
 	a := &asset{bytes: bytes, info: info}
 
 	return a, nil
 }
-
 
 //
 // Asset loads and returns the asset for the given name.
@@ -263,18 +254,18 @@ func AssetDir(name string) ([]string, error) {
 			node = node.Children[p]
 			if node == nil {
 				return nil, &os.PathError{
-					Op: "open",
+					Op:   "open",
 					Path: name,
-					Err: os.ErrNotExist,
+					Err:  os.ErrNotExist,
 				}
 			}
 		}
 	}
 	if node.Func != nil {
 		return nil, &os.PathError{
-			Op: "open",
+			Op:   "open",
 			Path: name,
-			Err: os.ErrNotExist,
+			Err:  os.ErrNotExist,
 		}
 	}
 	rv := make([]string, 0, len(node.Children))
@@ -283,7 +274,6 @@ func AssetDir(name string) ([]string, error) {
 	}
 	return rv, nil
 }
-
 
 type bintree struct {
 	Func     func() (*asset, error)

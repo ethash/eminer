@@ -96,7 +96,7 @@ func notifyWork(result *json.RawMessage) (*ethash.Work, error) {
 	}
 
 	if len(getWork) < 3 {
-		return nil, errors.New("Result short")
+		return nil, errors.New("result short")
 	}
 
 	seedHash := common.BytesToHash(common.FromHex(getWork[1]))
