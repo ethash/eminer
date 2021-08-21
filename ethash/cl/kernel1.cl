@@ -225,7 +225,6 @@ __kernel void seal(
 	) {
 
 	if (abort) {
-		g_output[0] = 0;
 		return;
 	}
 
@@ -253,11 +252,6 @@ __kernel void seal(
 
 	#pragma unroll 1
 	for (uint tid = 0; tid < THREADS; tid++) {
-		if (abort) {
-			g_output[0] = 0;
-			return;
-		}
-
 		if (tid == thread_id) {
 			share->data = ((uint16*)state)[0];
 		}
@@ -311,7 +305,6 @@ __kernel void seal(
 
 	if (SWAP64(state[0]) < target) {
 		if (abort) {
-			g_output[0] = 0;
 			return;
 		}
 		uint slot = min((uint)MAX_OUTPUTS, atomic_inc(&g_output[0]) + 1);

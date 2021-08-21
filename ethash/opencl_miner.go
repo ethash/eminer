@@ -875,6 +875,7 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 					goto workch
 				}
 				d.RUnlock()
+				time.Sleep(5 * time.Microsecond)
 			}
 
 			results = cres.ByteSlice()
