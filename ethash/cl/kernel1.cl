@@ -280,6 +280,11 @@ __kernel void seal(
 
 			#pragma unroll
 			for (uint i = 0; i != 8; ++i) {
+				if (abort) {
+					g_output[0] = 0;
+					return;
+				}
+
 				if (update_share) {
 					share->uints[0] = FNV(init0 ^ (a + i), ((uint *)&mix)[i]) % DAG_SIZE;
 				}

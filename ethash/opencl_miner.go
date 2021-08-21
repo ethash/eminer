@@ -870,7 +870,7 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 			d.RLock()
 			if s.workChanged {
 				d.RUnlock()
-				goto workchanged
+				goto workch
 			}
 			d.RUnlock()
 
@@ -902,7 +902,6 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 						d.roundCount.Empty()
 
 						c.RUnlock()
-						continue
 					}
 					c.RUnlock()
 
@@ -942,7 +941,7 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 
 			s.startNonce = s.startNonce + d.globalWorkSize
 
-		workchanged:
+		workch:
 			_, err = d.queueWorkers[s.bufIndex].EnqueueUnmapMemObject(d.searchBuffers[s.bufIndex], cres, nil)
 			if err != nil {
 				d.logger.Error("Error in seal clEnqueueUnMapMemObject", "error", err.Error())
