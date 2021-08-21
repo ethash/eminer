@@ -494,12 +494,20 @@ func (c *OpenCLMiner) generateDAGOnDevice(d *OpenCLDevice) error {
 	blockNum := c.Work.BlockNumberU64()
 	cache := c.ethash.cache(blockNum)
 
-	d.dagBuf1, err = d.ctx.CreateEmptyBuffer(cl.MemReadOnly, c.dagSize/2+64)
+	dagSize1 := c.dagSize / 2
+	dagSize2 := c.dagSize / 2
+
+	if blockNum&1 > 0 {
+		dagSize1 = c.dagSize/2 + 64
+		dagSize2 = c.dagSize/2 - 64
+	}
+
+	d.dagBuf1, err = d.ctx.CreateEmptyBuffer(cl.MemReadOnly, dagSize1)
 	if err != nil {
 		return fmt.Errorf("allocating dag buf failed: %v", err)
 	}
 
-	d.dagBuf2, err = d.ctx.CreateEmptyBuffer(cl.MemReadOnly, c.dagSize/2+64)
+	d.dagBuf2, err = d.ctx.CreateEmptyBuffer(cl.MemReadOnly, dagSize2)
 	if err != nil {
 		return fmt.Errorf("allocating dag buf failed: %v", err)
 	}
@@ -924,6 +932,8 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 				}
 			}
 
+			s.startNonce = s.startNonce + d.globalWorkSize
+
 		workchanged:
 			_, err = d.queueWorkers[s.bufIndex].EnqueueUnmapMemObject(d.searchBuffers[s.bufIndex], cres, nil)
 			if err != nil {
@@ -936,8 +946,6 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 				d.hashRate.Mark(int64(d.globalWorkSize * attempts))
 				attempts = 0
 			}
-
-			s.startNonce = s.startNonce + d.globalWorkSize
 		}
 	}
 
