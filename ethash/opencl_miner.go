@@ -494,13 +494,13 @@ func (c *OpenCLMiner) generateDAGOnDevice(d *OpenCLDevice) error {
 	blockNum := c.Work.BlockNumberU64()
 	cache := c.ethash.cache(blockNum)
 
-	dagSize1 := c.dagSize/2 + mixBytes
-	dagSize2 := c.dagSize/2 + mixBytes
+	dagSize1 := c.dagSize / 2
+	dagSize2 := c.dagSize / 2
 
-	/*if c.dagSize/mixBytes&1 > 0 {
+	if c.dagSize/mixBytes&1 > 0 {
 		dagSize1 = c.dagSize/2 + 64
 		dagSize2 = c.dagSize/2 - 64
-	}*/
+	}
 
 	d.dagBuf1, err = d.ctx.CreateEmptyBuffer(cl.MemReadOnly, dagSize1)
 	if err != nil {
@@ -559,7 +559,8 @@ func (c *OpenCLMiner) generateDAGOnDevice(d *OpenCLDevice) error {
 			return fmt.Errorf("set arg failed %v", err)
 		}
 
-		_, err = d.queue.EnqueueNDRangeKernel(dagKernel,
+		var event *cl.Event
+		event, err = d.queue.EnqueueNDRangeKernel(dagKernel,
 			[]int{0},
 			[]int{int(dagGlobalWorkSize)},
 			[]int{int(dagWorkGroupSize)}, nil)
@@ -567,10 +568,10 @@ func (c *OpenCLMiner) generateDAGOnDevice(d *OpenCLDevice) error {
 			return fmt.Errorf("enqueue kernel failed %v", err)
 		}
 
-		/* err = d.queue.Flush()
+		err = cl.WaitForEvents([]*cl.Event{event})
 		if err != nil {
-			return fmt.Errorf("queue flush failed %v", err)
-		} */
+			return fmt.Errorf("error in queue wait events %v", err)
+		}
 
 		elapsed := time.Now().UnixNano() - start
 		d.logger.Debug("Generating DAG in progress", "epoch", blockNum/epochLength,
@@ -843,19 +844,8 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 				continue
 			}
 
-			/* err = d.queueWorkers[s.bufIndex].Flush()
-			if err != nil {
-				d.logger.Error("Error in seal flush failed", "error", err.Error())
-				continue
-			} */
-
 			results = cres.ByteSlice()
-			nfound = binary.LittleEndian.Uint32(results)
-			nfound = uint32(math.Min(float64(nfound), float64(maxSearchResults)))
-
-			if nfound > 0 {
-				d.logger.Debug("Solution found on kernel", "worker", s.bufIndex, "found", nfound)
-			}
+			nfound = uint32(math.Min(float64(binary.LittleEndian.Uint32(results)), float64(maxSearchResults)))
 
 			for i := uint32(0); i < nfound; i++ {
 				lo := (i + 1) * sizeOfUint32
