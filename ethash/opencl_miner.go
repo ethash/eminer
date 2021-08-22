@@ -802,6 +802,12 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 		for !c.stop {
 			s.headerHash = headerHash
 
+			_, err = d.queueWorkers[s.bufIndex].EnqueueWriteBuffer(d.searchBuffers[s.bufIndex], false, 0, 4, unsafe.Pointer(&zero), nil)
+			if err != nil {
+				d.logger.Error("Error in seal clEnqueueWriteBuffer", "error", err.Error())
+				continue
+			}
+
 			d.Lock()
 			if s.workChanged {
 				if extraNonce > 0 {
@@ -825,6 +831,7 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 				d.Unlock()
 				continue
 			}
+			d.Unlock()
 
 			_, err = d.queueWorkers[s.bufIndex].EnqueueNDRangeKernel(
 				d.searchKernel,
@@ -834,36 +841,21 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 				nil)
 			if err != nil {
 				d.logger.Error("Error in seal clEnqueueNDRangeKernel", "error", err.Error())
-				d.Unlock()
 				continue
 			}
 
-			var event *cl.Event
-			cres, event, err = d.queueWorkers[s.bufIndex].EnqueueMapBuffer(d.searchBuffers[s.bufIndex], false,
+			cres, _, err = d.queueWorkers[s.bufIndex].EnqueueMapBuffer(d.searchBuffers[s.bufIndex], false,
 				cl.MapFlagRead, 0, (1+maxSearchResults)*sizeOfUint32,
 				nil)
 			if err != nil {
 				d.logger.Error("Error in seal clEnqueueMapBuffer", "error", err.Error())
-				d.Unlock()
 				continue
 			}
-			d.Unlock()
 
-			d.queueWorkers[s.bufIndex].Flush()
+			d.queueWorkers[s.bufIndex].Finish()
 
-			var results []byte
-			var nfound uint32
-
-			for !event.ExecutionCompleted() {
-				if s.workChanged {
-					goto workch
-				}
-
-				time.Sleep(time.Microsecond)
-			}
-
-			results = cres.ByteSlice()
-			nfound = uint32(math.Min(float64(binary.LittleEndian.Uint32(results)), float64(maxSearchResults)))
+			results := cres.ByteSlice()
+			nfound := uint32(math.Min(float64(binary.LittleEndian.Uint32(results)), float64(maxSearchResults)))
 
 			for i := uint32(0); i < nfound; i++ {
 				lo := (i + 1) * sizeOfUint32
@@ -915,13 +907,6 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 						c.InvalidSolutions.Inc(1)
 					}
 				}
-			}
-
-		workch:
-			_, err = d.queueWorkers[s.bufIndex].EnqueueWriteBuffer(d.searchBuffers[s.bufIndex], false, 0, 4, unsafe.Pointer(&zero), nil)
-			if err != nil {
-				d.logger.Error("Error in seal clEnqueueWriteBuffer", "error", err.Error())
-				continue
 			}
 
 			_, err = d.queueWorkers[s.bufIndex].EnqueueUnmapMemObject(d.searchBuffers[s.bufIndex], cres, nil)
