@@ -856,7 +856,7 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 				upperNonce := uint64(binary.LittleEndian.Uint32(results[lo:hi]))
 				checkNonce := s.startNonce + upperNonce
 				if checkNonce != 0 {
-					/* c.RLock()
+					c.RLock()
 					if !bytes.Equal(s.headerHash.Bytes(), c.Work.HeaderHash.Bytes()) {
 						d.logger.Warn("Stale solution found", "worker", s.bufIndex,
 							"hash", s.headerHash.TerminalString())
@@ -866,7 +866,7 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 						c.RUnlock()
 						continue
 					}
-					c.RUnlock() */
+					c.RUnlock()
 
 					// We verify that the nonce is indeed a solution by
 					// executing the Ethash verification function (on the CPU).
