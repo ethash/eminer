@@ -912,13 +912,13 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 
 			s.startNonce = s.startNonce + d.globalWorkSize
 
+		workch:
 			_, err = d.queueWorkers[s.bufIndex].EnqueueUnmapMemObject(d.searchBuffers[s.bufIndex], cres, nil)
 			if err != nil {
 				d.logger.Error("Error in seal clEnqueueUnMapMemObject", "error", err.Error())
 				continue
 			}
 
-		workch:
 			attempts++
 			if attempts == 2 {
 				d.hashRate.Mark(int64(d.globalWorkSize * attempts))
