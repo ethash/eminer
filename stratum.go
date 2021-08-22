@@ -153,7 +153,7 @@ func Stratum(stopChan <-chan struct{}) {
 				loops++
 				if (loops % 6) == 0 {
 					log.Info("Mining global report", "solutions", miner.FoundSolutions.Count(), "rejected", miner.RejectedSolutions.Count(),
-						"hashrate", fmt.Sprintf("%.3f Mh/s", miner.TotalHashRate()/1e6))
+						"hashrate", fmt.Sprintf("%.3f Mh/s", miner.TotalHashRate()/1e6), "poolhashrate", fmt.Sprintf("%.3f Mh/s", miner.SolutionsHashRate.RateMean()/1e6))
 				}
 			}
 		}

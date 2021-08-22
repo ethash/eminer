@@ -98,6 +98,7 @@ type OpenCLMiner struct {
 
 	stop bool
 
+	SolutionsHashRate metrics.Meter
 	FoundSolutions    metrics.Histogram
 	RejectedSolutions metrics.Counter
 	InvalidSolutions  metrics.Counter
@@ -155,6 +156,7 @@ func NewCL(deviceIds []int, workerName, version string) *OpenCLMiner {
 		dagSize:           0,
 		deviceIds:         ids,
 		workerName:        workerName,
+		SolutionsHashRate: metrics.NewMeter(),
 		FoundSolutions:    metrics.NewHistogram(metrics.NewUniformSample(1e4)),
 		RejectedSolutions: metrics.NewCounter(),
 		InvalidSolutions:  metrics.NewCounter(),
@@ -164,6 +166,7 @@ func NewCL(deviceIds []int, workerName, version string) *OpenCLMiner {
 		uptime:            time.Now(),
 	}
 
+	metrics.Register(workerName+".solutions.hashrate", miner.SolutionsHashRate)
 	metrics.Register(workerName+".solutions.found", miner.FoundSolutions)
 	metrics.Register(workerName+".solutions.rejected", miner.RejectedSolutions)
 	metrics.Register(workerName+".solutions.invalid", miner.InvalidSolutions)
@@ -859,7 +862,7 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 					cache := c.ethash.cache(number)
 					mixDigest, result := hashimotoLight(c.dagSize, cache, s.headerHash.Bytes(), checkNonce)
 
-					c.RLock()
+					/* c.RLock()
 					if !bytes.Equal(s.headerHash.Bytes(), c.Work.HeaderHash.Bytes()) {
 						d.logger.Warn("Stale solution found", "worker", s.bufIndex,
 							"hash", s.headerHash.TerminalString())
@@ -868,11 +871,13 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 						c.RUnlock()
 						continue
 					}
-					c.RUnlock()
+					c.RUnlock() */
 
 					if new(big.Int).SetBytes(result).Cmp(target256) <= 0 {
 						d.logger.Info("Solution found and verified", "worker", s.bufIndex,
 							"hash", s.headerHash.TerminalString())
+
+						c.SolutionsHashRate.Mark(c.Work.Difficulty().Int64())
 
 						roundVariance := uint64(100)
 						if c.Work.FixedDifficulty {
@@ -1200,6 +1205,7 @@ func (c *OpenCLMiner) MarshalJSON() ([]byte, error) {
 	data["found_solutions"] = c.FoundSolutions.Count()
 	data["rejected_solutions"] = c.RejectedSolutions.Count()
 	data["invalid_solutions"] = c.InvalidSolutions.Count()
+	data["solutions_hashrate_mean"] = c.SolutionsHashRate.RateMean()
 	data["total_hashrate_mean"] = c.TotalHashRateMean()
 	data["total_hashrate_1m"] = c.TotalHashRate1()
 	data["version"] = c.version
