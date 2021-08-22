@@ -849,13 +849,10 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 			}
 
 			for !event.ExecutionCompleted() {
-				d.RLock()
 				if s.workChanged {
-					d.queueWorkers[s.bufIndex].Finish()
-					d.RUnlock()
+					d.queueWorkers[s.bufIndex].Flush()
 					goto workch
 				}
-				d.RUnlock()
 				time.Sleep(5 * time.Microsecond)
 			}
 
