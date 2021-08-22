@@ -802,12 +802,6 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 		for !c.stop {
 			s.headerHash = headerHash
 
-			_, err = d.queueWorkers[s.bufIndex].EnqueueWriteBuffer(d.searchBuffers[s.bufIndex], false, 0, 4, unsafe.Pointer(&zero), nil)
-			if err != nil {
-				d.logger.Error("Error in seal clEnqueueWriteBuffer", "error", err.Error())
-				continue
-			}
-
 			d.Lock()
 			if s.workChanged {
 				if extraNonce > 0 {
@@ -863,7 +857,7 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 				upperNonce := uint64(binary.LittleEndian.Uint32(results[lo:hi]))
 				checkNonce := s.startNonce + upperNonce
 				if checkNonce != 0 {
-					c.RLock()
+					/* c.RLock()
 					if !bytes.Equal(s.headerHash.Bytes(), c.Work.HeaderHash.Bytes()) {
 						d.logger.Warn("Stale solution found", "worker", s.bufIndex,
 							"hash", s.headerHash.TerminalString())
@@ -873,7 +867,7 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 						c.RUnlock()
 						continue
 					}
-					c.RUnlock()
+					c.RUnlock() */
 
 					// We verify that the nonce is indeed a solution by
 					// executing the Ethash verification function (on the CPU).
@@ -909,10 +903,16 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 				}
 			}
 
+			if nfound > 0 {
+				_, err = d.queueWorkers[s.bufIndex].EnqueueWriteBuffer(d.searchBuffers[s.bufIndex], false, 0, 4, unsafe.Pointer(&zero), nil)
+				if err != nil {
+					d.logger.Error("Error in seal clEnqueueWriteBuffer", "error", err.Error())
+				}
+			}
+
 			_, err = d.queueWorkers[s.bufIndex].EnqueueUnmapMemObject(d.searchBuffers[s.bufIndex], cres, nil)
 			if err != nil {
 				d.logger.Error("Error in seal clEnqueueUnMapMemObject", "error", err.Error())
-				continue
 			}
 
 			s.startNonce = s.startNonce + d.globalWorkSize
