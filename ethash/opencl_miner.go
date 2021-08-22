@@ -494,13 +494,13 @@ func (c *OpenCLMiner) generateDAGOnDevice(d *OpenCLDevice) error {
 	blockNum := c.Work.BlockNumberU64()
 	cache := c.ethash.cache(blockNum)
 
-	dagSize1 := c.dagSize / 2
-	dagSize2 := c.dagSize / 2
+	dagSize1 := c.dagSize/2 + mixBytes
+	dagSize2 := c.dagSize/2 + mixBytes
 
-	if c.dagSize/mixBytes&1 > 0 {
+	/*if c.dagSize/mixBytes&1 > 0 {
 		dagSize1 = c.dagSize/2 + 64
 		dagSize2 = c.dagSize/2 - 64
-	}
+	}*/
 
 	d.dagBuf1, err = d.ctx.CreateEmptyBuffer(cl.MemReadOnly, dagSize1)
 	if err != nil {
@@ -778,6 +778,8 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 	var searchGroup sync.WaitGroup
 
 	worker := func(s *search) {
+		runtime.LockOSThread()
+
 		attempts := uint64(0)
 
 		var minWorkerRand, maxWorkerRand int64
@@ -849,10 +851,9 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 			d.Unlock()
 
 			var event *cl.Event
+			var cres *cl.MappedMemObject
 			var nfound uint32
 			var results []byte
-
-			cres := new(cl.MappedMemObject)
 
 			cres, event, err = d.queueWorkers[s.bufIndex].EnqueueMapBuffer(d.searchBuffers[s.bufIndex], false,
 				cl.MapFlagRead, 0, (1+maxSearchResults)*sizeOfUint32,
@@ -868,15 +869,15 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 				continue
 			}
 
+			d.RLock()
 			for !event.ExecutionCompleted() {
-				d.RLock()
 				if s.workChanged {
 					d.RUnlock()
 					goto workch
 				}
-				d.RUnlock()
-				time.Sleep(5 * time.Microsecond)
+				time.Sleep(10 * time.Microsecond)
 			}
+			d.RUnlock()
 
 			results = cres.ByteSlice()
 			nfound = binary.LittleEndian.Uint32(results)
