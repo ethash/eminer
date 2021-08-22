@@ -537,6 +537,8 @@ func (c *OpenCLMiner) generateDAGOnDevice(d *OpenCLDevice) error {
 		fullRuns++
 	}
 
+	d.queue.Finish()
+
 	err = dagKernel.SetArg(1, cacheBuf)
 	if err != nil {
 		return fmt.Errorf("set arg failed %v", err)
@@ -562,18 +564,17 @@ func (c *OpenCLMiner) generateDAGOnDevice(d *OpenCLDevice) error {
 			return fmt.Errorf("set arg failed %v", err)
 		}
 
-		var event *cl.Event
-		event, err = d.queue.EnqueueNDRangeKernel(dagKernel,
+		_, err = d.queue.EnqueueNDRangeKernel(dagKernel,
 			[]int{0},
 			[]int{int(dagGlobalWorkSize)},
 			[]int{int(dagWorkGroupSize)}, nil)
 		if err != nil {
-			return fmt.Errorf("enqueue kernel failed %v", err)
+			return fmt.Errorf("enqueue dag kernel failed %v", err)
 		}
 
-		err = cl.WaitForEvents([]*cl.Event{event})
+		err = d.queue.Finish()
 		if err != nil {
-			return fmt.Errorf("error in queue wait events %v", err)
+			return fmt.Errorf("clFinish dag queue failed %v", err)
 		}
 
 		elapsed := time.Now().UnixNano() - start
@@ -822,6 +823,17 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 				continue
 			}
 
+			var cres *cl.MappedMemObject
+			cres, _, err = d.queueWorkers[s.bufIndex].EnqueueMapBuffer(d.searchBuffers[s.bufIndex], false,
+				cl.MapFlagRead, 0, (1+maxSearchResults)*sizeOfUint32,
+				nil)
+			if err != nil {
+				d.logger.Error("Error in seal clEnqueueMapBuffer", "error", err.Error())
+				continue
+			}
+
+			d.queueWorkers[s.bufIndex].Finish()
+
 			_, err = d.queueWorkers[s.bufIndex].EnqueueNDRangeKernel(
 				d.searchKernel,
 				[]int{0},
@@ -835,26 +847,17 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 			}
 			d.Unlock()
 
-			var event *cl.Event
-			var cres *cl.MappedMemObject
 			var nfound uint32
 			var results []byte
 
-			cres, event, err = d.queueWorkers[s.bufIndex].EnqueueMapBuffer(d.searchBuffers[s.bufIndex], false,
-				cl.MapFlagRead, 0, (1+maxSearchResults)*sizeOfUint32,
-				nil)
-			if err != nil {
-				d.logger.Error("Error in seal clEnqueueMapBuffer", "error", err.Error())
-				continue
-			}
+			d.queueWorkers[s.bufIndex].Finish()
 
-			for !event.ExecutionCompleted() {
-				if s.workChanged {
-					d.queueWorkers[s.bufIndex].Flush()
-					goto workch
-				}
-				time.Sleep(5 * time.Microsecond)
+			d.RLock()
+			if s.workChanged {
+				d.RUnlock()
+				goto workch
 			}
+			d.RUnlock()
 
 			results = cres.ByteSlice()
 			nfound = uint32(math.Min(float64(binary.LittleEndian.Uint32(results)), float64(maxSearchResults)))
@@ -915,6 +918,8 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 				d.logger.Error("Error in seal clEnqueueUnMapMemObject", "error", err.Error())
 				continue
 			}
+
+			d.queueWorkers[s.bufIndex].Finish()
 
 			attempts++
 			if attempts == 2 {
