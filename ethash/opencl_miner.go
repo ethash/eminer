@@ -345,10 +345,11 @@ func (c *OpenCLMiner) initCLDevice(idx, deviceID int, device *cl.Device) error {
 	}
 
 	division := float64(intensity) / 16
-	factor := uint64((32 / float64(intensity)) + 0.5)
+	// factor := uint64((32 / float64(intensity)) + 0.5)
 
 	workGroupSize = uint64(intensity * 8)
-	globalWorkSize = uint64(math.Exp2(float64(intensity)/division)*float64(workGroupSize)) * factor
+	// globalWorkSize = uint64(math.Exp2(float64(intensity)/division)*float64(workGroupSize)) * factor
+	globalWorkSize = uint64(math.Exp2(float64(intensity)/division) * float64(workGroupSize))
 
 	logger.Trace("Intensity", "intensity", intensity, "global", globalWorkSize, "local", workGroupSize, "bufsize", searchBufSize)
 
@@ -802,6 +803,12 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 			s.headerHash = headerHash
 
 			d.Lock()
+			_, err = d.queueWorkers[s.bufIndex].EnqueueUnmapMemObject(d.searchBuffers[s.bufIndex], cres, nil)
+			if err != nil {
+				d.logger.Error("Error in seal clEnqueueUnMapMemObject", "error", err.Error())
+				continue
+			}
+
 			if s.workChanged {
 				if extraNonce > 0 {
 					s.startNonce = extraNonce + (uint64(idx*searchBufSize+int(s.bufIndex)) << (64 - 4 - uint64(c.Work.SizeBits)))
@@ -858,6 +865,18 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 				upperNonce := uint64(binary.LittleEndian.Uint32(results[lo:hi]))
 				checkNonce := s.startNonce + upperNonce
 				if checkNonce != 0 {
+					c.RLock()
+					if !bytes.Equal(s.headerHash.Bytes(), c.Work.HeaderHash.Bytes()) {
+						d.logger.Warn("Stale solution found", "worker", s.bufIndex,
+							"hash", s.headerHash.TerminalString())
+
+						d.roundCount.Empty()
+
+						c.RUnlock()
+						continue
+					}
+					c.RUnlock()
+
 					// We verify that the nonce is indeed a solution by
 					// executing the Ethash verification function (on the CPU).
 					number := c.Work.BlockNumberU64()
@@ -901,14 +920,6 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 			}
 
 			s.startNonce = s.startNonce + d.globalWorkSize
-
-			_, err = d.queueWorkers[s.bufIndex].EnqueueUnmapMemObject(d.searchBuffers[s.bufIndex], cres, nil)
-			if err != nil {
-				d.logger.Error("Error in seal clEnqueueUnMapMemObject", "error", err.Error())
-				continue
-			}
-
-			d.queueWorkers[s.bufIndex].Finish()
 
 			attempts++
 			if attempts == 2 {
