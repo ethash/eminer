@@ -796,6 +796,8 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 
 		defer searchGroup.Done()
 
+		var cres *cl.MappedMemObject
+
 		for !c.stop {
 			s.headerHash = headerHash
 
@@ -823,16 +825,14 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 				continue
 			}
 
-			var cres *cl.MappedMemObject
 			cres, _, err = d.queueWorkers[s.bufIndex].EnqueueMapBuffer(d.searchBuffers[s.bufIndex], false,
 				cl.MapFlagRead, 0, (1+maxSearchResults)*sizeOfUint32,
 				nil)
 			if err != nil {
 				d.logger.Error("Error in seal clEnqueueMapBuffer", "error", err.Error())
+				d.Unlock()
 				continue
 			}
-
-			d.queueWorkers[s.bufIndex].Finish()
 
 			_, err = d.queueWorkers[s.bufIndex].EnqueueNDRangeKernel(
 				d.searchKernel,
@@ -847,20 +847,10 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 			}
 			d.Unlock()
 
-			var nfound uint32
-			var results []byte
-
 			d.queueWorkers[s.bufIndex].Finish()
 
-			d.RLock()
-			if s.workChanged {
-				d.RUnlock()
-				goto workch
-			}
-			d.RUnlock()
-
-			results = cres.ByteSlice()
-			nfound = uint32(math.Min(float64(binary.LittleEndian.Uint32(results)), float64(maxSearchResults)))
+			results := cres.ByteSlice()
+			nfound := uint32(math.Min(float64(binary.LittleEndian.Uint32(results)), float64(maxSearchResults)))
 
 			for i := uint32(0); i < nfound; i++ {
 				lo := (i + 1) * sizeOfUint32
@@ -912,7 +902,6 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 
 			s.startNonce = s.startNonce + d.globalWorkSize
 
-		workch:
 			_, err = d.queueWorkers[s.bufIndex].EnqueueUnmapMemObject(d.searchBuffers[s.bufIndex], cres, nil)
 			if err != nil {
 				d.logger.Error("Error in seal clEnqueueUnMapMemObject", "error", err.Error())
