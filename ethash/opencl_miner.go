@@ -825,7 +825,6 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 				d.Unlock()
 				continue
 			}
-			d.Unlock()
 
 			_, err = d.queueWorkers[s.bufIndex].EnqueueNDRangeKernel(
 				d.searchKernel,
@@ -835,18 +834,18 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 				nil)
 			if err != nil {
 				d.logger.Error("Error in seal clEnqueueNDRangeKernel", "error", err.Error())
+				d.Unlock()
 				continue
 			}
+			d.Unlock()
 
-			cres, _, err = d.queueWorkers[s.bufIndex].EnqueueMapBuffer(d.searchBuffers[s.bufIndex], false,
+			cres, _, err = d.queueWorkers[s.bufIndex].EnqueueMapBuffer(d.searchBuffers[s.bufIndex], true,
 				cl.MapFlagRead, 0, (1+maxSearchResults)*sizeOfUint32,
 				nil)
 			if err != nil {
 				d.logger.Error("Error in seal clEnqueueMapBuffer", "error", err.Error())
 				continue
 			}
-
-			d.queueWorkers[s.bufIndex].Finish()
 
 			results := cres.ByteSlice()
 			nfound := uint32(math.Min(float64(binary.LittleEndian.Uint32(results)), float64(maxSearchResults)))
