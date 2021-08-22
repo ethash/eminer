@@ -559,8 +559,7 @@ func (c *OpenCLMiner) generateDAGOnDevice(d *OpenCLDevice) error {
 			return fmt.Errorf("set arg failed %v", err)
 		}
 
-		var event *cl.Event
-		event, err = d.queue.EnqueueNDRangeKernel(dagKernel,
+		_, err = d.queue.EnqueueNDRangeKernel(dagKernel,
 			[]int{0},
 			[]int{int(dagGlobalWorkSize)},
 			[]int{int(dagWorkGroupSize)}, nil)
@@ -568,15 +567,10 @@ func (c *OpenCLMiner) generateDAGOnDevice(d *OpenCLDevice) error {
 			return fmt.Errorf("enqueue kernel failed %v", err)
 		}
 
-		err = d.queue.Flush()
+		/* err = d.queue.Flush()
 		if err != nil {
 			return fmt.Errorf("queue flush failed %v", err)
-		}
-
-		err = cl.WaitForEvents([]*cl.Event{event})
-		if err != nil {
-			return fmt.Errorf("error in queue wait events %v", err)
-		}
+		} */
 
 		elapsed := time.Now().UnixNano() - start
 		d.logger.Debug("Generating DAG in progress", "epoch", blockNum/epochLength,
@@ -849,18 +843,11 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 				continue
 			}
 
-			err = d.queueWorkers[s.bufIndex].Flush()
+			/* err = d.queueWorkers[s.bufIndex].Flush()
 			if err != nil {
 				d.logger.Error("Error in seal flush failed", "error", err.Error())
 				continue
-			}
-
-			d.RLock()
-			if s.workChanged {
-				d.RUnlock()
-				goto workch
-			}
-			d.RUnlock()
+			} */
 
 			results = cres.ByteSlice()
 			nfound = binary.LittleEndian.Uint32(results)
@@ -929,7 +916,6 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 
 			s.startNonce = s.startNonce + d.globalWorkSize
 
-		workch:
 			_, err = d.queueWorkers[s.bufIndex].EnqueueUnmapMemObject(d.searchBuffers[s.bufIndex], cres, nil)
 			if err != nil {
 				d.logger.Error("Error in seal clEnqueueUnMapMemObject", "error", err.Error())
