@@ -763,12 +763,6 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 		return err
 	}
 
-	err = d.searchKernel.SetArgUint32(6, 0)
-	if err != nil {
-		d.logger.Error("Error in seal clSetKernelArg 6", "error", err.Error())
-		return err
-	}
-
 	regName := fmt.Sprintf("%s.gpu.%d.hashrate", c.workerName, deviceID)
 
 	metrics.Unregister(regName)
@@ -814,13 +808,6 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 					s.startNonce = uint64(d.nonceRand.Int63n(maxWorkerRand-minWorkerRand) + minWorkerRand)
 				}
 				s.workChanged = false
-
-				err = d.searchKernel.SetArgUint32(6, 0)
-				if err != nil {
-					d.logger.Error("Error in seal clSetKernelArg 6", "error", err.Error())
-					d.Unlock()
-					continue
-				}
 			}
 
 			err = d.searchKernel.SetArg(0, d.searchBuffers[s.bufIndex])
@@ -875,7 +862,7 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 					d.RUnlock()
 					goto workch
 				}
-				time.Sleep(10 * time.Microsecond)
+				time.Sleep(time.Microsecond)
 			}
 			d.RUnlock()
 
@@ -1009,12 +996,6 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 				for _, s := range workers {
 					s.workChanged = true
 				}
-
-				err = d.searchKernel.SetArgUint32(6, 1)
-				if err != nil {
-					d.logger.Error("Error in seal clSetKernelArg 6", "error", err.Error())
-				}
-
 				d.Unlock()
 			}
 
@@ -1052,16 +1033,9 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 				}
 
 				d.Lock()
-
 				for _, s := range workers {
 					s.workChanged = true
 				}
-
-				err = d.searchKernel.SetArgUint32(6, 1)
-				if err != nil {
-					d.logger.Error("Error in seal clSetKernelArg 6", "error", err.Error())
-				}
-
 				d.Unlock()
 			}
 			c.Unlock()

@@ -220,14 +220,8 @@ __kernel void seal(
 	__global hash128_t const* g_dag1,
 	__global hash128_t const* g_dag2,
 	ulong start_nonce,
-	ulong target,
-	uint abort
+	ulong target
 	) {
-
-	if (abort) {
-		return;
-	}
-
 	uint const gid = get_global_id(0);
 	uint const thread_id = gid % THREADS;
 	uint const hash_id = (gid % GROUP_SIZE) >> 1;
@@ -310,10 +304,7 @@ __kernel void seal(
 
 	keccak_f1600(state, 1);
 
-	if (SWAP64(state[0]) < target) {
-		if (abort) {
-			return;
-		}		
+	if (SWAP64(state[0]) < target) {	
 		uint slot = min((uint)MAX_OUTPUTS, atomic_inc(&g_output[0]) + 1);
 		g_output[slot] = gid;
 	}
