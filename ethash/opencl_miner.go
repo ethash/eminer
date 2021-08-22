@@ -905,8 +905,8 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 							"hash", s.headerHash.TerminalString())
 
 						d.roundCount.Empty()
-
 						c.RUnlock()
+						continue
 					}
 					c.RUnlock()
 
