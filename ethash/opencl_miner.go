@@ -847,54 +847,56 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 			results = cres.ByteSlice()
 			nfound = uint32(math.Min(float64(binary.LittleEndian.Uint32(results)), float64(maxSearchResults)))
 
-			for i := uint32(0); i < nfound; i++ {
-				lo := (i + 1) * sizeOfUint32
-				hi := (i + 2) * sizeOfUint32
-				upperNonce := uint64(binary.LittleEndian.Uint32(results[lo:hi]))
-				checkNonce := s.startNonce + upperNonce
-				if checkNonce != 0 {
-					// We verify that the nonce is indeed a solution by
-					// executing the Ethash verification function (on the CPU).
-					number := c.Work.BlockNumberU64()
-					cache := c.ethash.cache(number)
-					mixDigest, result := hashimotoLight(c.dagSize, cache, s.headerHash.Bytes(), checkNonce)
+			go func() {
+				for i := uint32(0); i < nfound; i++ {
+					lo := (i + 1) * sizeOfUint32
+					hi := (i + 2) * sizeOfUint32
+					upperNonce := uint64(binary.LittleEndian.Uint32(results[lo:hi]))
+					checkNonce := s.startNonce + upperNonce
+					if checkNonce != 0 {
+						// We verify that the nonce is indeed a solution by
+						// executing the Ethash verification function (on the CPU).
+						number := c.Work.BlockNumberU64()
+						cache := c.ethash.cache(number)
+						mixDigest, result := hashimotoLight(c.dagSize, cache, s.headerHash.Bytes(), checkNonce)
 
-					c.RLock()
-					if !bytes.Equal(s.headerHash.Bytes(), c.Work.HeaderHash.Bytes()) {
-						d.logger.Warn("Stale solution found", "worker", s.bufIndex,
-							"hash", s.headerHash.TerminalString())
+						c.RLock()
+						if !bytes.Equal(s.headerHash.Bytes(), c.Work.HeaderHash.Bytes()) {
+							d.logger.Warn("Stale solution found", "worker", s.bufIndex,
+								"hash", s.headerHash.TerminalString())
 
-						d.roundCount.Empty()
+							d.roundCount.Empty()
+							c.RUnlock()
+							continue
+						}
 						c.RUnlock()
-						continue
-					}
-					c.RUnlock()
 
-					if new(big.Int).SetBytes(result).Cmp(target256) <= 0 {
-						d.logger.Info("Solution found and verified", "worker", s.bufIndex,
-							"hash", s.headerHash.TerminalString())
+						if new(big.Int).SetBytes(result).Cmp(target256) <= 0 {
+							d.logger.Info("Solution found and verified", "worker", s.bufIndex,
+								"hash", s.headerHash.TerminalString())
 
-						roundVariance := uint64(100)
-						if c.Work.FixedDifficulty {
-							d.roundCount.Put()
-							roundCount := d.roundCount.Count() * c.Work.MinerDifficulty().Uint64()
-							roundVariance = roundCount * 100 / c.Work.Difficulty().Uint64()
+							roundVariance := uint64(100)
+							if c.Work.FixedDifficulty {
+								d.roundCount.Put()
+								roundCount := d.roundCount.Count() * c.Work.MinerDifficulty().Uint64()
+								roundVariance = roundCount * 100 / c.Work.Difficulty().Uint64()
+							}
+
+							go onSolutionFound(true, checkNonce, mixDigest, roundVariance)
+
+							d.roundCount.Empty()
+
+						} else if c.Work.FixedDifficulty {
+							if new(big.Int).SetBytes(result).Cmp(c.Work.MinerTarget) <= 0 {
+								d.roundCount.Put()
+							}
+						} else {
+							d.logger.Error("Found corrupt solution, check your device.")
+							c.InvalidSolutions.Inc(1)
 						}
-
-						go onSolutionFound(true, checkNonce, mixDigest, roundVariance)
-
-						d.roundCount.Empty()
-
-					} else if c.Work.FixedDifficulty {
-						if new(big.Int).SetBytes(result).Cmp(c.Work.MinerTarget) <= 0 {
-							d.roundCount.Put()
-						}
-					} else {
-						d.logger.Error("Found corrupt solution, check your device.")
-						c.InvalidSolutions.Inc(1)
 					}
 				}
-			}
+			}()
 
 			if nfound > 0 {
 				_, err = d.queueWorkers[s.bufIndex].EnqueueWriteBuffer(d.searchBuffers[s.bufIndex], false, 0, 4, unsafe.Pointer(&zero), nil)
