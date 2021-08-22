@@ -842,7 +842,7 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 			var nfound uint32
 			var results []byte
 
-			cres, event, err = d.queueWorkers[s.bufIndex].EnqueueMapBuffer(d.searchBuffers[s.bufIndex], false,
+			cres, event, err = d.queueWorkers[s.bufIndex].EnqueueMapBuffer(d.searchBuffers[s.bufIndex], true,
 				cl.MapFlagRead, 0, (1+maxSearchResults)*sizeOfUint32,
 				nil)
 			if err != nil {
@@ -857,12 +857,9 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 			}
 
 			d.RLock()
-			for !event.ExecutionCompleted() {
-				if s.workChanged {
-					d.RUnlock()
-					goto workch
-				}
-				time.Sleep(time.Microsecond)
+			if s.workChanged {
+				d.RUnlock()
+				goto workch
 			}
 			d.RUnlock()
 
