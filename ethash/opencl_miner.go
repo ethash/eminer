@@ -850,6 +850,19 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 			results = cres.ByteSlice()
 			nfound = uint32(math.Min(float64(binary.LittleEndian.Uint32(results)), float64(maxSearchResults)))
 
+			if nfound > 0 {
+				c.RLock()
+				if !bytes.Equal(s.headerHash.Bytes(), c.Work.HeaderHash.Bytes()) {
+					d.logger.Info("Stale solution found", "worker", s.bufIndex,
+						"hash", s.headerHash.TerminalString())
+
+					d.roundCount.Empty()
+					c.RUnlock()
+					continue
+				}
+				c.RUnlock()
+			}
+
 			for i := uint32(0); i < nfound; i++ {
 				lo := (i + 1) * sizeOfUint32
 				hi := (i + 2) * sizeOfUint32
@@ -861,17 +874,6 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 					number := c.Work.BlockNumberU64()
 					cache := c.ethash.cache(number)
 					mixDigest, result := hashimotoLight(c.dagSize, cache, s.headerHash.Bytes(), checkNonce)
-
-					/* c.RLock()
-					if !bytes.Equal(s.headerHash.Bytes(), c.Work.HeaderHash.Bytes()) {
-						d.logger.Warn("Stale solution found", "worker", s.bufIndex,
-							"hash", s.headerHash.TerminalString())
-
-						d.roundCount.Empty()
-						c.RUnlock()
-						continue
-					}
-					c.RUnlock() */
 
 					if new(big.Int).SetBytes(result).Cmp(target256) <= 0 {
 						d.logger.Info("Solution found and verified", "worker", s.bufIndex,
