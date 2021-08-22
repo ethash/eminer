@@ -914,6 +914,8 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 				d.logger.Error("Error in seal clEnqueueUnMapMemObject", "error", err.Error())
 			}
 
+			d.queueWorkers[s.bufIndex].Finish()
+
 			s.startNonce = s.startNonce + d.globalWorkSize
 
 			attempts++
