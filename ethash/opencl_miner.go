@@ -835,11 +835,12 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 			}
 			d.Unlock()
 
+			var event *cl.Event
 			var cres *cl.MappedMemObject
 			var nfound uint32
 			var results []byte
 
-			cres, _, err = d.queueWorkers[s.bufIndex].EnqueueMapBuffer(d.searchBuffers[s.bufIndex], true,
+			cres, event, err = d.queueWorkers[s.bufIndex].EnqueueMapBuffer(d.searchBuffers[s.bufIndex], false,
 				cl.MapFlagRead, 0, (1+maxSearchResults)*sizeOfUint32,
 				nil)
 			if err != nil {
@@ -847,21 +848,19 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 				continue
 			}
 
+			for !event.ExecutionCompleted() {
+				d.RLock()
+				if s.workChanged {
+					d.queueWorkers[s.bufIndex].Finish()
+					d.RUnlock()
+					goto workch
+				}
+				d.RUnlock()
+				time.Sleep(5 * time.Microsecond)
+			}
+
 			results = cres.ByteSlice()
 			nfound = uint32(math.Min(float64(binary.LittleEndian.Uint32(results)), float64(maxSearchResults)))
-
-			if nfound > 0 {
-				c.RLock()
-				if !bytes.Equal(s.headerHash.Bytes(), c.Work.HeaderHash.Bytes()) {
-					d.logger.Info("Stale solution found", "worker", s.bufIndex,
-						"hash", s.headerHash.TerminalString())
-
-					d.roundCount.Empty()
-					c.RUnlock()
-					continue
-				}
-				c.RUnlock()
-			}
 
 			for i := uint32(0); i < nfound; i++ {
 				lo := (i + 1) * sizeOfUint32
@@ -919,6 +918,7 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 				continue
 			}
 
+		workch:
 			attempts++
 			if attempts == 2 {
 				d.hashRate.Mark(int64(d.globalWorkSize * attempts))
