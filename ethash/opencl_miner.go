@@ -942,6 +942,10 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 			}
 
 			if results.count > 0 {
+				if results.count > maxSearchResults+1 {
+					results.count = maxSearchResults + 1
+				}
+
 				_, err = d.queueWorkers[s.bufIndex].EnqueueReadBuffer(d.searchBuffers[s.bufIndex], true, 0, uint64(results.count*uint32(unsafe.Sizeof(results.rslt[0]))), unsafe.Pointer(&results.rslt[0]), nil)
 				if err != nil {
 					d.logger.Error("Error read in seal searchBuffer results", "error", err.Error())
@@ -961,7 +965,7 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 				c.RUnlock()
 			}
 
-			go func(results searchResults) {
+			go func(results *searchResults, headerHash common.Hash) {
 				for i := uint32(0); i < results.count; i++ {
 					upperNonce := uint64(results.rslt[i].gid)
 					checkNonce := s.startNonce + upperNonce
@@ -970,11 +974,11 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 						// executing the Ethash verification function (on the CPU).
 						number := c.Work.BlockNumberU64()
 						cache := c.ethash.cache(number)
-						mixDigest, foundTarget := hashimotoLight(c.dagSize, cache, s.headerHash.Bytes(), checkNonce)
+						mixDigest, foundTarget := hashimotoLight(c.dagSize, cache, headerHash.Bytes(), checkNonce)
 
 						if new(big.Int).SetBytes(foundTarget).Cmp(target256) <= 0 {
 							d.logger.Info("Solution found and verified", "worker", s.bufIndex,
-								"hash", s.headerHash.TerminalString())
+								"hash", headerHash.TerminalString())
 
 							c.SolutionsHashRate.Mark(c.Work.Difficulty().Int64())
 
@@ -999,7 +1003,7 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 						}
 					}
 				}
-			}(results)
+			}(&results, s.headerHash)
 
 		clear:
 			if results.count > 0 {
