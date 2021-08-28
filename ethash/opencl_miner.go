@@ -498,13 +498,13 @@ func (c *OpenCLMiner) createDagProgramOnDevice(d *OpenCLDevice) (err error) {
 
 	d.dagProgram, err = d.ctx.CreateProgramWithSource([]string{kernelCode})
 	if err != nil {
-		return fmt.Errorf("program err: %v", err)
+		return fmt.Errorf("dagProgram err: %v", err)
 	}
 
 	buildOpts := fmt.Sprintf("-D DAG_SIZE=%d -D LIGHT_SIZE=%d", c.dagSize/mixBytes, c.cacheSize/sizeOfNode)
-	err = d.program.BuildProgram([]*cl.Device{d.device}, buildOpts)
+	err = d.dagProgram.BuildProgram([]*cl.Device{d.device}, buildOpts)
 	if err != nil {
-		return fmt.Errorf("program build err: %v", err)
+		return fmt.Errorf("dagProgram build err: %v", err)
 	}
 
 	return nil
