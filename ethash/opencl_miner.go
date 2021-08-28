@@ -790,7 +790,7 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 		return err
 	}
 
-	err = d.searchKernel.SetArg(4, c.dagSize/mixBytes)
+	err = d.searchKernel.SetArg(4, uint32(c.dagSize/mixBytes))
 	if err != nil {
 		d.logger.Error("Error in seal clSetKernelArg 4", "error", err.Error())
 		return err
