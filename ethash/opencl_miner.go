@@ -468,7 +468,7 @@ func (c *OpenCLMiner) createBinaryProgramOnDevice(d *OpenCLDevice, workGroupSize
 		return fmt.Errorf("program err: %v", err)
 	}
 
-	buildOpts := fmt.Sprintf("-D FAST_EXIT=%d", 0)
+	buildOpts := ""
 	err = d.program.BuildProgram([]*cl.Device{d.device}, buildOpts)
 	if err != nil {
 		return fmt.Errorf("program build err: %v", err)
