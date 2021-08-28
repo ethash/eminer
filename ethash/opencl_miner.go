@@ -965,10 +965,10 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 				c.RUnlock()
 			}
 
-			go func(results *searchResults, headerHash common.Hash) {
+			go func(results *searchResults, startNonce uint64, headerHash common.Hash) {
 				for i := uint32(0); i < results.count; i++ {
 					upperNonce := uint64(results.rslt[i].gid)
-					checkNonce := s.startNonce + upperNonce
+					checkNonce := startNonce + upperNonce
 					if checkNonce != 0 {
 						// We verify that the nonce is indeed a solution by
 						// executing the Ethash verification function (on the CPU).
@@ -1003,7 +1003,7 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 						}
 					}
 				}
-			}(&results, s.headerHash)
+			}(&results, s.startNonce, s.headerHash)
 
 		clear:
 			if results.count > 0 {
