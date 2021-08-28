@@ -100,9 +100,9 @@ func Benchmark(stopChan chan struct{}) {
 					miner.Lock()
 					miner.Work.HeaderHash = common.BytesToHash(common.FromHex(randomHash()))
 					miner.Unlock()
-				}()
 
-				miner.WorkChanged()
+					miner.WorkChanged()
+				}()
 			}
 		}
 
