@@ -763,7 +763,7 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 	}
 
 	for i := 0; i < searchBufSize; i++ {
-		_, err = d.queue.EnqueueWriteBuffer(d.searchBuffers[i], false, 0, 4, unsafe.Pointer(&zero), nil)
+		_, err = d.queue.EnqueueWriteBuffer(d.searchBuffers[i], false, 16, 4, unsafe.Pointer(&zero), nil)
 		if err != nil {
 			d.logger.Error("Error in seal clEnqueueWriterBuffer", "error", err.Error())
 			return err
@@ -946,7 +946,7 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 			}
 
 			if nfound > 0 {
-				_, err = d.queueWorkers[s.bufIndex].EnqueueWriteBuffer(d.searchBuffers[s.bufIndex], false, 0, 4, unsafe.Pointer(&zero), nil)
+				_, err = d.queueWorkers[s.bufIndex].EnqueueWriteBuffer(d.searchBuffers[s.bufIndex], false, 16, 4, unsafe.Pointer(&zero), nil)
 				if err != nil {
 					d.logger.Error("Error in seal clEnqueueWriteBuffer", "error", err.Error())
 				}
