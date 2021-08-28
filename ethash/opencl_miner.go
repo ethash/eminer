@@ -375,7 +375,7 @@ func (c *OpenCLMiner) initCLDevice(idx, deviceID int, device *cl.Device) error {
 
 	searchBuffers := make([]*cl.MemObject, searchBufSize)
 	for i := 0; i < searchBufSize; i++ {
-		searchBuff, errsb := context.CreateEmptyBuffer(cl.MemWriteOnly, (1+maxSearchResults)*uint64(unsafe.Sizeof(searchResults{})))
+		searchBuff, errsb := context.CreateEmptyBuffer(cl.MemWriteOnly, uint64(unsafe.Sizeof(searchResults{})))
 		if errsb != nil {
 			return fmt.Errorf("search buffer err: %v", errsb)
 		}
@@ -897,32 +897,30 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 				continue
 			}
 
-			nfound := results.count
-
-			if nfound > 0 {
-				_, err = d.queue.EnqueueReadBuffer(d.searchBuffers[s.bufIndex], true, 0, uint64(nfound*uint32(unsafe.Sizeof(results.rslt[0]))), unsafe.Pointer(&results), nil)
+			if results.count > 0 {
+				_, err = d.queue.EnqueueReadBuffer(d.searchBuffers[s.bufIndex], true, 0, uint64(results.count*uint32(unsafe.Sizeof(results.rslt[0]))), unsafe.Pointer(&results.rslt[0]), nil)
 				if err != nil {
 					d.logger.Error("Error read in seal searchBuffer results", "error", err.Error())
-					continue
+					goto clear
 				}
+
+				c.RLock()
+				if !bytes.Equal(s.headerHash.Bytes(), c.Work.HeaderHash.Bytes()) {
+					d.logger.Warn("Stale solution found", "worker", s.bufIndex,
+						"hash", s.headerHash.TerminalString())
+
+					d.roundCount.Empty()
+
+					c.RUnlock()
+					goto clear
+				}
+				c.RUnlock()
 			}
 
-			for i := uint32(0); i < nfound; i++ {
+			for i := uint32(0); i < results.count; i++ {
 				upperNonce := uint64(results.rslt[i].gid)
 				checkNonce := s.startNonce + upperNonce
 				if checkNonce != 0 {
-					c.RLock()
-					if !bytes.Equal(s.headerHash.Bytes(), c.Work.HeaderHash.Bytes()) {
-						d.logger.Warn("Stale solution found", "worker", s.bufIndex,
-							"hash", s.headerHash.TerminalString())
-
-						d.roundCount.Empty()
-
-						c.RUnlock()
-						continue
-					}
-					c.RUnlock()
-
 					// We verify that the nonce is indeed a solution by
 					// executing the Ethash verification function (on the CPU).
 					number := c.Work.BlockNumberU64()
@@ -957,7 +955,8 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 				}
 			}
 
-			if nfound > 0 {
+		clear:
+			if results.count > 0 {
 				_, err = d.queueWorkers[s.bufIndex].EnqueueWriteBuffer(d.searchBuffers[s.bufIndex], false, uint64(unsafe.Offsetof(results.count)), sizeOfUint32, unsafe.Pointer(&zero), nil)
 				if err != nil {
 					d.logger.Error("Error write in seal clear buffers", "error", err.Error())
