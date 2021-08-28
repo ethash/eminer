@@ -65,6 +65,10 @@ func Benchmark(stopChan chan struct{}) {
 					"hashrate", fmt.Sprintf("%.3f Mh/s", miner.GetHashrate(deviceID)/1e6),
 					"temperature", fmt.Sprintf("%.2f C", miner.GetTemperature(deviceID)),
 					"fan", fmt.Sprintf("%.2f%%", miner.GetFanPercent(deviceID)))
+				log.Info("Mining global report", "solutions", miner.FoundSolutions.Count(), "rejected", miner.RejectedSolutions.Count(),
+					"hashrate", fmt.Sprintf("%.3f Mh/s", miner.TotalHashRate()/1e6), "effectivehashrate", fmt.Sprintf("%.3f Mh/s", miner.SolutionsHashRate.RateMean()/1e6),
+					"efficiency", fmt.Sprintf("%.2f%%", 100+(100*(miner.SolutionsHashRate.RateMean()-miner.TotalHashRate())/miner.TotalHashRate())))
+
 			}
 		}
 	}
