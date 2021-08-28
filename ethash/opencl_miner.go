@@ -5,6 +5,7 @@ package ethash
 import (
 	"bytes"
 	crand "crypto/rand"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -24,6 +25,7 @@ import (
 	"github.com/ethash/eminer/nvml"
 	"github.com/ethash/go-opencl/cl"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/hako/durafmt"
 	metrics "github.com/rcrowley/go-metrics"
@@ -972,9 +974,22 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 					if checkNonce != 0 {
 						// We verify that the nonce is indeed a solution by
 						// executing the Ethash verification function (on the CPU).
-						number := c.Work.BlockNumberU64()
-						cache := c.ethash.cache(number)
-						mixDigest, foundTarget := hashimotoLight(c.dagSize, cache, headerHash.Bytes(), checkNonce)
+						// number := c.Work.BlockNumberU64()
+						// cache := c.ethash.cache(number)
+						// mixDigest, foundTarget := hashimotoLight(c.dagSize, cache, headerHash.Bytes(), checkNonce)
+
+						mixDigest := make([]byte, common.HashLength)
+						for z, val := range results.rslt[i].mix {
+							binary.LittleEndian.PutUint32(mixDigest[z*4:], val)
+						}
+
+						seed := make([]byte, 40)
+						copy(seed, headerHash[:])
+						binary.LittleEndian.PutUint64(seed[32:], checkNonce)
+
+						seed = crypto.Keccak512(seed)
+
+						foundTarget := crypto.Keccak256(append(seed, mixDigest...))
 
 						if new(big.Int).SetBytes(foundTarget).Cmp(target256) <= 0 {
 							d.logger.Info("Solution found and verified", "worker", s.bufIndex,
