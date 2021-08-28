@@ -332,7 +332,60 @@ __kernel void search(
 	}
 }
 
-__kernel void generate_dag_item(uint start, __global hash64_t const* g_light,
+typedef union _Node {
+    uint dwords[16];
+    uint2 qwords[8];
+    uint4 dqwords[4];
+} Node;
+
+__kernel void generate_dag_item(uint start, __global const uint16 *_Cache, __global uint16 *_DAG0, __global uint16 *_DAG1)
+{
+    __global const Node *Cache = (__global const Node *) _Cache;
+    const uint gid = get_global_id(0);
+    uint NodeIdx = start + gid;
+    const uint thread_id = gid & 3;
+
+    __local Node sharebuf[WORKSIZE];
+    __local uint indexbuf[WORKSIZE];
+    __local Node *dagNode = sharebuf + (get_local_id(0) / 4) * 4;
+    __local uint *indexes = indexbuf + (get_local_id(0) / 4) * 4;
+    __global const Node *parentNode;
+
+    Node DAGNode = Cache[NodeIdx % LIGHT_SIZE];
+
+    DAGNode.dwords[0] ^= NodeIdx;
+    SHA3_512(DAGNode.qwords);
+
+    dagNode[thread_id] = DAGNode;
+    barrier(CLK_LOCAL_MEM_FENCE);
+    for (uint i = 0; i < 256; ++i) {
+        uint ParentIdx = fnv(NodeIdx ^ i, dagNode[thread_id].dwords[i & 15]) % LIGHT_SIZE;
+        indexes[thread_id] = ParentIdx;
+        barrier(CLK_LOCAL_MEM_FENCE);
+
+        for (uint t = 0; t < 4; ++t) {
+            uint parentIndex = indexes[t];
+            parentNode = Cache + parentIndex;
+
+            dagNode[t].dqwords[thread_id] = fnv(dagNode[t].dqwords[thread_id], parentNode->dqwords[thread_id]);
+            barrier(CLK_LOCAL_MEM_FENCE);
+        }
+    }
+    DAGNode = dagNode[thread_id];
+
+    SHA3_512(DAGNode.qwords);
+
+    __global Node *DAG;
+    if (NodeIdx & 2)
+        DAG = (__global Node *) _DAG1;
+    else
+        DAG = (__global Node *) _DAG0;
+    NodeIdx &= ~2;
+    //if (NodeIdx < DAG_SIZE)
+    DAG[(NodeIdx / 2) | (NodeIdx & 1)] = DAGNode;
+}
+
+/* __kernel void generate_dag_item(uint start, __global hash64_t const* g_light,
 	__global hash64_t * g_dag1, __global hash64_t * g_dag2) {
 	uint node_id = start + get_global_id(0);
 
@@ -364,4 +417,4 @@ __kernel void generate_dag_item(uint start, __global hash64_t const* g_light,
 	node_id &= ~2;
 
 	g_dag[(node_id / 2) | (node_id & 1)].data = dag_node.uint16s[0];
-}
+} */
