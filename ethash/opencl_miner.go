@@ -450,15 +450,15 @@ func (c *OpenCLMiner) initCLDevice(idx, deviceID int, device *cl.Device) error {
 		return err
 	}
 
-	/* err = c.createBinaryProgramOnDevice(d, workGroupSize)
-	if err != nil {
-		return err
-	} */
-
-	err = c.createSourceProgramOnDevice(d)
+	err = c.createBinaryProgramOnDevice(d, workGroupSize)
 	if err != nil {
 		return err
 	}
+
+	/* err = c.createSourceProgramOnDevice(d)
+	if err != nil {
+		return err
+	} */
 
 	err = c.generateDAGOnDevice(d)
 	if err != nil {
@@ -691,15 +691,15 @@ func (c *OpenCLMiner) ChangeDAGOnAllDevices() (err error) {
 			return
 		}
 
-		/* err = c.createBinaryProgramOnDevice(d, d.workGroupSize)
-		if err != nil {
-			return
-		} */
-
-		err = c.createSourceProgramOnDevice(d)
+		err = c.createBinaryProgramOnDevice(d, d.workGroupSize)
 		if err != nil {
 			return
 		}
+
+		/* err = c.createSourceProgramOnDevice(d)
+		if err != nil {
+			return
+		} */
 
 		wg.Add(1)
 		go func(d *OpenCLDevice) {
