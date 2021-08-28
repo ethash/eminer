@@ -20,6 +20,8 @@ import (
 
 	"github.com/ethash/eminer/adl"
 	"github.com/ethash/eminer/counter"
+	clbin "github.com/ethash/eminer/ethash/cl"
+	"github.com/ethash/eminer/ethash/gcn"
 	"github.com/ethash/eminer/nvml"
 	"github.com/ethash/go-opencl/cl"
 	"github.com/ethereum/go-ethereum/common"
@@ -133,7 +135,7 @@ const (
 
 	maxWorkGroupSize = 256
 
-	amdIntensity    = 32
+	amdIntensity    = 16
 	nvidiaIntensity = 8
 
 	defaultSearchBufSize = 1
@@ -431,7 +433,12 @@ func (c *OpenCLMiner) initCLDevice(idx, deviceID int, device *cl.Device) error {
 	metrics.Register(fmt.Sprintf("%s.gpu.%d.memoryclock", c.workerName, deviceID), d.memoryclock)
 	metrics.Register(fmt.Sprintf("%s.gpu.%d.engineclock", c.workerName, deviceID), d.engineclock)
 
-	err = c.createProgramOnDevice(d)
+	/* err = c.createSourceProgramOnDevice(d)
+	if err != nil {
+		return err
+	} */
+
+	err = c.createBinaryProgramOnDevice(d, workGroupSize)
 	if err != nil {
 		return err
 	}
@@ -448,7 +455,21 @@ func (c *OpenCLMiner) initCLDevice(idx, deviceID int, device *cl.Device) error {
 	return nil
 }
 
-func (c *OpenCLMiner) createProgramOnDevice(d *OpenCLDevice) (err error) {
+func (c *OpenCLMiner) createBinaryProgramOnDevice(d *OpenCLDevice, workGroupSize uint64) (err error) {
+	data, err := gcnSource(fmt.Sprintf("ethash_ellesmere_lws%d.bin", workGroupSize))
+	if err != nil {
+		return err
+	}
+
+	d.program, err = d.ctx.CreateProgramWithBinary(data, d.device)
+	if err != nil {
+		return fmt.Errorf("program err: %v", err)
+	}
+
+	return nil
+}
+
+func (c *OpenCLMiner) createSourceProgramOnDevice(d *OpenCLDevice) (err error) {
 	deviceVendor := 0
 	if d.nvidiaGPU {
 		deviceVendor = 1
@@ -607,7 +628,12 @@ func (c *OpenCLMiner) ChangeDAGOnAllDevices() (err error) {
 		d.searchKernel.Release()
 		d.program.Release()
 
-		err = c.createProgramOnDevice(d)
+		/* err = c.createSourceProgramOnDevice(d)
+		if err != nil {
+			return
+		} */
+
+		err = c.createBinaryProgramOnDevice(d, d.workGroupSize)
 		if err != nil {
 			return
 		}
@@ -1248,10 +1274,19 @@ func replaceWords(text string, kvs map[string]string) string {
 }
 
 func kernelSource(name string) string {
-	kernel, err := Asset("cl/" + name)
+	asset, err := clbin.Asset("cl/" + name)
 	if err != nil {
 		return ""
 	}
 
-	return string(kernel)
+	return string(asset)
+}
+
+func gcnSource(name string) ([]byte, error) {
+	asset, err := gcn.Asset("gcn/bin/" + name)
+	if err != nil {
+		return []byte{}, err
+	}
+
+	return asset, nil
 }

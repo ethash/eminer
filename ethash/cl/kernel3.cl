@@ -214,11 +214,12 @@ typedef union {
 #if OPENCL_DEVICE != OPENCL_DEVICE_NVIDIA
 __attribute__((reqd_work_group_size(GROUP_SIZE, 1, 1)))
 #endif
-__kernel void seal(
+__kernel void search(
 	__global volatile uint* restrict g_output,
 	__constant hash32_t const* g_header,
 	__global hash128_t const* g_dag1,
 	__global hash128_t const* g_dag2,
+	uint dag_size,
 	ulong start_nonce,
 	ulong target
 	) {
@@ -264,7 +265,7 @@ __kernel void seal(
 			#pragma unroll
 			for (uint i = 0; i != 16; ++i) {
 				if (update_share) {
-					share->uints[0] = FNV(init0 ^ (a + i), ((uint *)&mix)[i]) % DAG_SIZE;
+					share->uints[0] = FNV(init0 ^ (a + i), ((uint *)&mix)[i]) % dag_size;
 				}
 				barrier(CLK_LOCAL_MEM_FENCE);
 
