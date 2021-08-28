@@ -345,8 +345,8 @@ __kernel void generate_dag_item(uint start, __global const uint16 *_Cache, __glo
     uint NodeIdx = start + gid;
     const uint thread_id = gid & 3;
 
-    __local Node sharebuf[WORKSIZE];
-    __local uint indexbuf[WORKSIZE];
+    __local Node sharebuf[GROUP_SIZE];
+    __local uint indexbuf[GROUP_SIZE];
     __local Node *dagNode = sharebuf + (get_local_id(0) / 4) * 4;
     __local uint *indexes = indexbuf + (get_local_id(0) / 4) * 4;
     __global const Node *parentNode;
