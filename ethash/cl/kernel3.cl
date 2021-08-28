@@ -305,7 +305,7 @@ __kernel void search(
 
 	keccak_f1600(state, 1);
 
-	if (SWAP64(state[0]) < target) {	
+	if (SWAP64(state[0]) <= target) {	
 		uint slot = min((uint)MAX_OUTPUTS, atomic_inc(&g_output[0]) + 1);
 		g_output[slot] = gid;
 	}

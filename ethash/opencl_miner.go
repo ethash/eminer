@@ -5,7 +5,6 @@ package ethash
 import (
 	"bytes"
 	crand "crypto/rand"
-	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -128,11 +127,22 @@ type kernel struct {
 	threadCount uint64
 }
 
+type searchResults struct {
+	rslt [maxSearchResults + 1]struct {
+		gid uint32
+		mix [8]uint32
+		pad [7]uint32
+	}
+	count     uint32
+	hashCount uint32
+	abort     uint32
+}
+
 const (
 	sizeOfUint32 = 4
 	sizeOfNode   = 64
 
-	maxSearchResults = 7
+	maxSearchResults = 3
 
 	maxWorkGroupSize = 256
 
@@ -365,7 +375,7 @@ func (c *OpenCLMiner) initCLDevice(idx, deviceID int, device *cl.Device) error {
 
 	searchBuffers := make([]*cl.MemObject, searchBufSize)
 	for i := 0; i < searchBufSize; i++ {
-		searchBuff, errsb := context.CreateEmptyBuffer(cl.MemWriteOnly, (1+maxSearchResults)*sizeOfUint32)
+		searchBuff, errsb := context.CreateEmptyBuffer(cl.MemWriteOnly, (1+maxSearchResults)*uint64(unsafe.Sizeof(searchResults{})))
 		if errsb != nil {
 			return fmt.Errorf("search buffer err: %v", errsb)
 		}
@@ -741,6 +751,7 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 	c.Unlock()
 
 	var zero uint32
+	var results searchResults
 
 	idx := c.getDevice(deviceID)
 	d := c.devices[idx]
@@ -763,7 +774,7 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 	}
 
 	for i := 0; i < searchBufSize; i++ {
-		_, err = d.queue.EnqueueWriteBuffer(d.searchBuffers[i], false, 16, 4, unsafe.Pointer(&zero), nil)
+		_, err = d.queue.EnqueueWriteBuffer(d.searchBuffers[i], false, uint64(unsafe.Offsetof(results.count)), sizeOfUint32, unsafe.Pointer(&zero), nil)
 		if err != nil {
 			d.logger.Error("Error in seal clEnqueueWriterBuffer", "error", err.Error())
 			return err
@@ -840,8 +851,6 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 
 		defer searchGroup.Done()
 
-		var cres *cl.MappedMemObject
-
 		for !c.stop {
 			s.headerHash = headerHash
 
@@ -882,21 +891,24 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 			}
 			d.Unlock()
 
-			cres, _, err = d.queueWorkers[s.bufIndex].EnqueueMapBuffer(d.searchBuffers[s.bufIndex], true,
-				cl.MapFlagRead, 16, (1+maxSearchResults)*sizeOfUint32,
-				nil)
+			_, err = d.queue.EnqueueReadBuffer(d.searchBuffers[s.bufIndex], true, uint64(unsafe.Offsetof(results.count)), sizeOfUint32, unsafe.Pointer(&results.count), nil)
 			if err != nil {
-				d.logger.Error("Error in seal clEnqueueMapBuffer", "error", err.Error())
+				d.logger.Error("Error read in seal searchBuffer count", "error", err.Error())
 				continue
 			}
 
-			results := cres.ByteSlice()
-			nfound := uint32(math.Min(float64(binary.LittleEndian.Uint32(results)), float64(maxSearchResults)))
+			nfound := results.count
+
+			if nfound > 0 {
+				_, err = d.queue.EnqueueReadBuffer(d.searchBuffers[s.bufIndex], true, 0, uint64(nfound*uint32(unsafe.Sizeof(results.rslt[0]))), unsafe.Pointer(&results), nil)
+				if err != nil {
+					d.logger.Error("Error read in seal searchBuffer results", "error", err.Error())
+					continue
+				}
+			}
 
 			for i := uint32(0); i < nfound; i++ {
-				lo := (i + 1) * sizeOfUint32
-				hi := (i + 2) * sizeOfUint32
-				upperNonce := uint64(binary.LittleEndian.Uint32(results[lo:hi]))
+				upperNonce := uint64(results.rslt[i].gid)
 				checkNonce := s.startNonce + upperNonce
 				if checkNonce != 0 {
 					c.RLock()
@@ -946,15 +958,12 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 			}
 
 			if nfound > 0 {
-				_, err = d.queueWorkers[s.bufIndex].EnqueueWriteBuffer(d.searchBuffers[s.bufIndex], false, 16, 4, unsafe.Pointer(&zero), nil)
+				_, err = d.queueWorkers[s.bufIndex].EnqueueWriteBuffer(d.searchBuffers[s.bufIndex], false, uint64(unsafe.Offsetof(results.count)), sizeOfUint32, unsafe.Pointer(&zero), nil)
 				if err != nil {
-					d.logger.Error("Error in seal clEnqueueWriteBuffer", "error", err.Error())
+					d.logger.Error("Error write in seal clear buffers", "error", err.Error())
 				}
-			}
 
-			_, err = d.queueWorkers[s.bufIndex].EnqueueUnmapMemObject(d.searchBuffers[s.bufIndex], cres, nil)
-			if err != nil {
-				d.logger.Error("Error in seal clEnqueueUnMapMemObject", "error", err.Error())
+				results.count = 0
 			}
 
 			d.queueWorkers[s.bufIndex].Finish()
