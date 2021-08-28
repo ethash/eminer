@@ -284,7 +284,7 @@ __kernel void search(
 
 				__global hash128_t const* g_dag = g_dag1;
 
-				if (share->uints[0] & 2) {
+				if (share->uints[0] & 1) {
 					g_dag = g_dag2;
 				}
 
