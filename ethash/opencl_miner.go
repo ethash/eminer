@@ -582,8 +582,8 @@ func (c *OpenCLMiner) generateDAGOnDevice(d *OpenCLDevice) error {
 	dagSize2 := c.dagSize / 2
 
 	if c.dagSize/mixBytes&1 > 0 {
-		dagSize1 = c.dagSize/2 - 64
-		dagSize2 = c.dagSize/2 + 64
+		dagSize1 = c.dagSize/2 + 64
+		dagSize2 = c.dagSize/2 - 64
 	}
 
 	d.dagBuf1, err = d.ctx.CreateEmptyBuffer(cl.MemReadOnly, dagSize1)
