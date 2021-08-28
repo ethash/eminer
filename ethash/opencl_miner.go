@@ -635,6 +635,7 @@ func (c *OpenCLMiner) ChangeDAGOnAllDevices() (err error) {
 		d.dagBuf2.Release()
 		d.searchKernel.Release()
 		d.program.Release()
+		d.dagProgram.Release()
 
 		err = c.createDagProgramOnDevice(d)
 		if err != nil {
@@ -672,6 +673,7 @@ func (c *OpenCLMiner) ReleaseAll() {
 		d.ctx.Release()
 		d.queue.Release()
 		d.program.Release()
+		d.dagProgram.Release()
 		d.searchKernel.Release()
 		d.dagBuf1.Release()
 		d.dagBuf2.Release()
@@ -695,6 +697,7 @@ func (c *OpenCLMiner) Release(deviceID int) {
 	d.ctx.Release()
 	d.queue.Release()
 	d.program.Release()
+	d.dagProgram.Release()
 	d.searchKernel.Release()
 	d.dagBuf1.Release()
 	d.dagBuf2.Release()
@@ -880,7 +883,7 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 			d.Unlock()
 
 			cres, _, err = d.queueWorkers[s.bufIndex].EnqueueMapBuffer(d.searchBuffers[s.bufIndex], true,
-				cl.MapFlagRead, 0, (1+maxSearchResults)*sizeOfUint32,
+				cl.MapFlagRead, 16, (1+maxSearchResults)*sizeOfUint32,
 				nil)
 			if err != nil {
 				d.logger.Error("Error in seal clEnqueueMapBuffer", "error", err.Error())
