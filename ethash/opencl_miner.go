@@ -492,6 +492,40 @@ func (c *OpenCLMiner) createBinaryProgramOnDevice(d *OpenCLDevice, workGroupSize
 	return nil
 }
 
+func (c *OpenCLMiner) createSourceProgramOnDevice(d *OpenCLDevice) (err error) {
+	deviceVendor := 0
+	if d.nvidiaGPU {
+		deviceVendor = 1
+	}
+
+	kvs := make(map[string]string)
+	kvs["GROUP_SIZE"] = strconv.FormatUint(d.workGroupSize, 10)
+	kvs["DEVICE_VENDOR"] = strconv.Itoa(deviceVendor)
+	kvs["ACCESSES"] = strconv.FormatUint(loopAccesses, 10)
+	kvs["MAX_OUTPUTS"] = strconv.FormatUint(maxSearchResults, 10)
+	kvs["HASH_SIZE"] = strconv.FormatUint(d.workGroupSize/d.kernel.threadCount, 10)
+	kvs["THREADS"] = strconv.FormatUint(d.kernel.threadCount, 10)
+	kernelCode := replaceWords(d.kernel.source, kvs)
+
+	d.program, err = d.ctx.CreateProgramWithSource([]string{kernelCode})
+	if err != nil {
+		return fmt.Errorf("program err: %v", err)
+	}
+
+	buildOpts := fmt.Sprintf("-D DAG_SIZE=%d -D LIGHT_SIZE=%d", c.dagSize/mixBytes, c.cacheSize/sizeOfNode)
+	err = d.program.BuildProgram([]*cl.Device{d.device}, buildOpts)
+	if err != nil {
+		return fmt.Errorf("program build err: %v", err)
+	}
+
+	d.searchKernel, err = d.program.CreateKernel("search")
+	if err != nil {
+		return fmt.Errorf("create kernel err: %v", err)
+	}
+
+	return nil
+}
+
 func (c *OpenCLMiner) createDagProgramOnDevice(d *OpenCLDevice) (err error) {
 	deviceVendor := 0
 	if d.nvidiaGPU {
@@ -652,7 +686,12 @@ func (c *OpenCLMiner) ChangeDAGOnAllDevices() (err error) {
 			return
 		}
 
-		err = c.createBinaryProgramOnDevice(d, d.workGroupSize)
+		/* err = c.createBinaryProgramOnDevice(d, d.workGroupSize)
+		if err != nil {
+			return
+		} */
+
+		err = c.createSourceProgramOnDevice(d)
 		if err != nil {
 			return
 		}
@@ -925,9 +964,9 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 					// executing the Ethash verification function (on the CPU).
 					number := c.Work.BlockNumberU64()
 					cache := c.ethash.cache(number)
-					mixDigest, result := hashimotoLight(c.dagSize, cache, s.headerHash.Bytes(), checkNonce)
+					mixDigest, foundTarget := hashimotoLight(c.dagSize, cache, s.headerHash.Bytes(), checkNonce)
 
-					if new(big.Int).SetBytes(result).Cmp(target256) <= 0 {
+					if new(big.Int).SetBytes(foundTarget).Cmp(target256) <= 0 {
 						d.logger.Info("Solution found and verified", "worker", s.bufIndex,
 							"hash", s.headerHash.TerminalString())
 
@@ -945,7 +984,7 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 						d.roundCount.Empty()
 
 					} else if c.Work.FixedDifficulty {
-						if new(big.Int).SetBytes(result).Cmp(c.Work.MinerTarget) <= 0 {
+						if new(big.Int).SetBytes(foundTarget).Cmp(c.Work.MinerTarget) <= 0 {
 							d.roundCount.Put()
 						}
 					} else {
