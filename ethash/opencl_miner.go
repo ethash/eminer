@@ -5,6 +5,7 @@ package ethash
 import (
 	"bytes"
 	crand "crypto/rand"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -450,7 +451,12 @@ func (c *OpenCLMiner) initCLDevice(idx, deviceID int, device *cl.Device) error {
 		return err
 	}
 
-	err = c.createBinaryProgramOnDevice(d, workGroupSize)
+	/* err = c.createBinaryProgramOnDevice(d, workGroupSize)
+	if err != nil {
+		return err
+	} */
+
+	err = c.createSourceProgramOnDevice(d)
 	if err != nil {
 		return err
 	}
@@ -930,6 +936,8 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 			}
 			d.Unlock()
 
+			d.queueWorkers[s.bufIndex].Finish()
+
 			_, err = d.queue.EnqueueReadBuffer(d.searchBuffers[s.bufIndex], true, uint64(unsafe.Offsetof(results.count)), sizeOfUint32, unsafe.Pointer(&results.count), nil)
 			if err != nil {
 				d.logger.Error("Error read in seal searchBuffer count", "error", err.Error())
@@ -959,12 +967,19 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 			for i := uint32(0); i < results.count; i++ {
 				upperNonce := uint64(results.rslt[i].gid)
 				checkNonce := s.startNonce + upperNonce
+				digest := make([]byte, common.HashLength)
+				for z, val := range results.rslt[i].mix {
+					binary.LittleEndian.PutUint32(digest[z*4:], val)
+				}
 				if checkNonce != 0 {
 					// We verify that the nonce is indeed a solution by
 					// executing the Ethash verification function (on the CPU).
 					number := c.Work.BlockNumberU64()
 					cache := c.ethash.cache(number)
 					mixDigest, foundTarget := hashimotoLight(c.dagSize, cache, s.headerHash.Bytes(), checkNonce)
+
+					fmt.Println("CPU:", common.BytesToHash(mixDigest).String())
+					fmt.Println("GPU:", common.BytesToHash(digest).String())
 
 					if new(big.Int).SetBytes(foundTarget).Cmp(target256) <= 0 {
 						d.logger.Info("Solution found and verified", "worker", s.bufIndex,
