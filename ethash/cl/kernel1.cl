@@ -1,6 +1,6 @@
 // Optimized 4 threads
 
-#pragma OPENCL EXTENSION cl_amd_printf : enable
+// #pragma OPENCL EXTENSION cl_amd_printf : enable
 
 #define OPENCL_DEVICE_AMD		0
 #define OPENCL_DEVICE_NVIDIA	1
@@ -311,7 +311,7 @@ __kernel void search(
 	mixhash[1] = state[9];
 	mixhash[2] = state[10];
 	mixhash[3] = state[11];
-	
+
 	state[12] = 0x0000000000000001UL;
 	state[16] = 0x8000000000000000UL;
 
@@ -319,7 +319,7 @@ __kernel void search(
 
 	if (SWAP64(state[0]) <= target) {
 		uint slot = min((uint)MAX_OUTPUTS, atomic_inc(&g_output->count));
-		printf("Nonce: %i Slot: %i Gid: %i\n", start_nonce, slot, gid);
+		// printf("Nonce: %i Slot: %i Gid: %i\n", start_nonce, slot, gid);
         g_output->rslt[slot].gid = gid;
         g_output->rslt[slot].mix[0] = mixhash[0].s0;
         g_output->rslt[slot].mix[1] = mixhash[0].s1;
