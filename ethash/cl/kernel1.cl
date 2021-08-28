@@ -284,7 +284,7 @@ __kernel void search(
 
 				__global hash128_t const* g_dag = g_dag1;
 
-				if (share->uints[0] & 1) {
+				if (share->uints[0] & 2) {
 					g_dag = g_dag2;
 				}
 
@@ -360,6 +360,8 @@ __kernel void generate_dag_item(uint start, __global hash64_t const* g_light,
 	if (node_id & 2) {
 		g_dag = g_dag2;
 	}
+
+	node_id &= ~2;
 
 	g_dag[(node_id / 2) | (node_id & 1)].data = dag_node.uint16s[0];
 }
