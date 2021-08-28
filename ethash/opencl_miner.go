@@ -60,8 +60,9 @@ type OpenCLDevice struct {
 	queue        *cl.CommandQueue
 	queueWorkers []*cl.CommandQueue
 
-	ctx     *cl.Context
-	program *cl.Program
+	ctx        *cl.Context
+	program    *cl.Program
+	dagProgram *cl.Program
 
 	nonceRand *mrand.Rand // seeded by crypto/rand, see comments where it's initialised
 
@@ -433,10 +434,10 @@ func (c *OpenCLMiner) initCLDevice(idx, deviceID int, device *cl.Device) error {
 	metrics.Register(fmt.Sprintf("%s.gpu.%d.memoryclock", c.workerName, deviceID), d.memoryclock)
 	metrics.Register(fmt.Sprintf("%s.gpu.%d.engineclock", c.workerName, deviceID), d.engineclock)
 
-	/* err = c.createSourceProgramOnDevice(d)
+	err = c.createDagProgramOnDevice(d)
 	if err != nil {
 		return err
-	} */
+	}
 
 	err = c.createBinaryProgramOnDevice(d, workGroupSize)
 	if err != nil {
@@ -466,10 +467,21 @@ func (c *OpenCLMiner) createBinaryProgramOnDevice(d *OpenCLDevice, workGroupSize
 		return fmt.Errorf("program err: %v", err)
 	}
 
+	buildOpts := fmt.Sprintf("-D FAST_EXIT=%d", 0)
+	err = d.program.BuildProgram([]*cl.Device{d.device}, buildOpts)
+	if err != nil {
+		return fmt.Errorf("program build err: %v", err)
+	}
+
+	d.searchKernel, err = d.program.CreateKernel("search")
+	if err != nil {
+		return
+	}
+
 	return nil
 }
 
-func (c *OpenCLMiner) createSourceProgramOnDevice(d *OpenCLDevice) (err error) {
+func (c *OpenCLMiner) createDagProgramOnDevice(d *OpenCLDevice) (err error) {
 	deviceVendor := 0
 	if d.nvidiaGPU {
 		deviceVendor = 1
@@ -484,7 +496,7 @@ func (c *OpenCLMiner) createSourceProgramOnDevice(d *OpenCLDevice) (err error) {
 	kvs["THREADS"] = strconv.FormatUint(d.kernel.threadCount, 10)
 	kernelCode := replaceWords(d.kernel.source, kvs)
 
-	d.program, err = d.ctx.CreateProgramWithSource([]string{kernelCode})
+	d.dagProgram, err = d.ctx.CreateProgramWithSource([]string{kernelCode})
 	if err != nil {
 		return fmt.Errorf("program err: %v", err)
 	}
@@ -493,11 +505,6 @@ func (c *OpenCLMiner) createSourceProgramOnDevice(d *OpenCLDevice) (err error) {
 	err = d.program.BuildProgram([]*cl.Device{d.device}, buildOpts)
 	if err != nil {
 		return fmt.Errorf("program build err: %v", err)
-	}
-
-	d.searchKernel, err = d.program.CreateKernel("seal")
-	if err != nil {
-		return fmt.Errorf("searchKernel err: %v", err)
 	}
 
 	return nil
@@ -511,7 +518,7 @@ func (c *OpenCLMiner) generateDAGOnDevice(d *OpenCLDevice) error {
 
 	dagKernelFunc := "generate_dag_item"
 
-	dagKernel, err := d.program.CreateKernel(dagKernelFunc)
+	dagKernel, err := d.dagProgram.CreateKernel(dagKernelFunc)
 	if err != nil {
 		return fmt.Errorf("dagKernelName err: %v", err)
 	}
@@ -628,10 +635,10 @@ func (c *OpenCLMiner) ChangeDAGOnAllDevices() (err error) {
 		d.searchKernel.Release()
 		d.program.Release()
 
-		/* err = c.createSourceProgramOnDevice(d)
+		err = c.createDagProgramOnDevice(d)
 		if err != nil {
 			return
-		} */
+		}
 
 		err = c.createBinaryProgramOnDevice(d, d.workGroupSize)
 		if err != nil {
@@ -783,9 +790,15 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 		return err
 	}
 
-	err = d.searchKernel.SetArg(5, target64)
+	err = d.searchKernel.SetArg(4, c.dagSize/mixBytes)
 	if err != nil {
-		d.logger.Error("Error in seal clSetKernelArg 5", "error", err.Error())
+		d.logger.Error("Error in seal clSetKernelArg 4", "error", err.Error())
+		return err
+	}
+
+	err = d.searchKernel.SetArg(6, target64)
+	if err != nil {
+		d.logger.Error("Error in seal clSetKernelArg 6", "error", err.Error())
 		return err
 	}
 
@@ -845,9 +858,9 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 				continue
 			}
 
-			err = d.searchKernel.SetArg(4, s.startNonce)
+			err = d.searchKernel.SetArg(5, s.startNonce)
 			if err != nil {
-				d.logger.Error("Error in seal clSetKernelArg 4", "error", err.Error())
+				d.logger.Error("Error in seal clSetKernelArg 5", "error", err.Error())
 				d.Unlock()
 				continue
 			}
@@ -984,9 +997,9 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 				if !c.Work.FixedDifficulty {
 					target64 = new(big.Int).Rsh(target256, 192).Uint64()
 
-					err = d.searchKernel.SetArg(5, target64)
+					err = d.searchKernel.SetArg(6, target64)
 					if err != nil {
-						d.logger.Error("Error in seal clSetKernelArg 5", "error", err.Error())
+						d.logger.Error("Error in seal clSetKernelArg 6", "error", err.Error())
 						c.Unlock()
 						goto done
 					}
@@ -1027,9 +1040,9 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 					if !c.Work.FixedDifficulty {
 						target64 = new(big.Int).Rsh(target256, 192).Uint64()
 
-						err = d.searchKernel.SetArg(5, target64)
+						err = d.searchKernel.SetArg(6, target64)
 						if err != nil {
-							d.logger.Error("Error in seal clSetKernelArg 5", "error", err.Error())
+							d.logger.Error("Error in seal clSetKernelArg 6", "error", err.Error())
 							c.Unlock()
 							goto done
 						}
