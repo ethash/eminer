@@ -353,7 +353,7 @@ func (c *OpenCLMiner) initCLDevice(idx, deviceID int, device *cl.Device) error {
 	workGroupSize = uint64(intensity * 8)
 	// globalWorkSize = uint64(math.Exp2(float64(intensity)/division)*float64(workGroupSize)) * factor
 	// globalWorkSize = uint64(math.Exp2(float64(intensity)/division) * float64(workGroupSize))
-	globalWorkSize = uint64(intensity * 4096)
+	globalWorkSize = uint64(workGroupSize * 65536)
 
 	logger.Trace("Intensity", "intensity", intensity, "global", globalWorkSize, "local", workGroupSize, "bufsize", searchBufSize)
 
