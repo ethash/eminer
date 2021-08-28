@@ -961,43 +961,45 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 				c.RUnlock()
 			}
 
-			for i := uint32(0); i < results.count; i++ {
-				upperNonce := uint64(results.rslt[i].gid)
-				checkNonce := s.startNonce + upperNonce
-				if checkNonce != 0 {
-					// We verify that the nonce is indeed a solution by
-					// executing the Ethash verification function (on the CPU).
-					number := c.Work.BlockNumberU64()
-					cache := c.ethash.cache(number)
-					mixDigest, foundTarget := hashimotoLight(c.dagSize, cache, s.headerHash.Bytes(), checkNonce)
+			go func(results searchResults) {
+				for i := uint32(0); i < results.count; i++ {
+					upperNonce := uint64(results.rslt[i].gid)
+					checkNonce := s.startNonce + upperNonce
+					if checkNonce != 0 {
+						// We verify that the nonce is indeed a solution by
+						// executing the Ethash verification function (on the CPU).
+						number := c.Work.BlockNumberU64()
+						cache := c.ethash.cache(number)
+						mixDigest, foundTarget := hashimotoLight(c.dagSize, cache, s.headerHash.Bytes(), checkNonce)
 
-					if new(big.Int).SetBytes(foundTarget).Cmp(target256) <= 0 {
-						d.logger.Info("Solution found and verified", "worker", s.bufIndex,
-							"hash", s.headerHash.TerminalString())
+						if new(big.Int).SetBytes(foundTarget).Cmp(target256) <= 0 {
+							d.logger.Info("Solution found and verified", "worker", s.bufIndex,
+								"hash", s.headerHash.TerminalString())
 
-						c.SolutionsHashRate.Mark(c.Work.Difficulty().Int64())
+							c.SolutionsHashRate.Mark(c.Work.Difficulty().Int64())
 
-						roundVariance := uint64(100)
-						if c.Work.FixedDifficulty {
-							d.roundCount.Put()
-							roundCount := d.roundCount.Count() * c.Work.MinerDifficulty().Uint64()
-							roundVariance = roundCount * 100 / c.Work.Difficulty().Uint64()
+							roundVariance := uint64(100)
+							if c.Work.FixedDifficulty {
+								d.roundCount.Put()
+								roundCount := d.roundCount.Count() * c.Work.MinerDifficulty().Uint64()
+								roundVariance = roundCount * 100 / c.Work.Difficulty().Uint64()
+							}
+
+							go onSolutionFound(true, checkNonce, mixDigest, roundVariance)
+
+							d.roundCount.Empty()
+
+						} else if c.Work.FixedDifficulty {
+							if new(big.Int).SetBytes(foundTarget).Cmp(c.Work.MinerTarget) <= 0 {
+								d.roundCount.Put()
+							}
+						} else {
+							d.logger.Error("Found corrupt solution, check your device.")
+							c.InvalidSolutions.Inc(1)
 						}
-
-						go onSolutionFound(true, checkNonce, mixDigest, roundVariance)
-
-						d.roundCount.Empty()
-
-					} else if c.Work.FixedDifficulty {
-						if new(big.Int).SetBytes(foundTarget).Cmp(c.Work.MinerTarget) <= 0 {
-							d.roundCount.Put()
-						}
-					} else {
-						d.logger.Error("Found corrupt solution, check your device.")
-						c.InvalidSolutions.Inc(1)
 					}
 				}
-			}
+			}(results)
 
 		clear:
 			if results.count > 0 {
