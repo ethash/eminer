@@ -971,14 +971,11 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 
 			d.queueWorkers[s.bufIndex].Flush()
 
-			d.RLock()
 			_, err = d.queueWorkers[s.bufIndex].EnqueueReadBuffer(d.searchBuffers[s.bufIndex], true, uint64(unsafe.Offsetof(results.count)), 2*sizeOfUint32, unsafe.Pointer(&results.count), nil)
 			if err != nil {
 				d.logger.Error("Error read in seal searchBuffer count", "error", err.Error())
-				d.RUnlock()
 				continue
 			}
-			d.RUnlock()
 
 			if results.count > 0 {
 				if results.count > maxSearchResults+1 {
