@@ -119,6 +119,7 @@ type OpenCLMiner struct {
 type search struct {
 	bufIndex    uint32
 	startNonce  uint64
+	headerHash  common.Hash
 	workChanged bool
 }
 
@@ -881,6 +882,8 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 		s.workChanged = true
 
 		for !c.stop {
+			s.headerHash = headerHash
+
 			d.Lock()
 			if s.workChanged {
 				if extraNonce > 0 {
@@ -938,9 +941,9 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 				}
 
 				c.RLock()
-				if !bytes.Equal(headerHash.Bytes(), c.Work.HeaderHash.Bytes()) {
+				if !bytes.Equal(s.headerHash.Bytes(), c.Work.HeaderHash.Bytes()) {
 					d.logger.Warn("Stale solution found", "worker", s.bufIndex,
-						"hash", headerHash.TerminalString())
+						"hash", s.headerHash.TerminalString())
 
 					d.roundCount.Empty()
 
@@ -1001,7 +1004,7 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 						}
 					}
 				}
-			}(&results, s.startNonce, headerHash)
+			}(&results, s.startNonce, s.headerHash)
 
 		clear:
 			if results.count > 0 {
