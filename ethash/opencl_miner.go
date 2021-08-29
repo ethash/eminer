@@ -477,7 +477,7 @@ func (c *OpenCLMiner) initCLDevice(idx, deviceID int, device *cl.Device) error {
 }
 
 func (c *OpenCLMiner) createBinaryProgramOnDevice(d *OpenCLDevice, workGroupSize uint64) (err error) {
-	data, err := gcnSource(fmt.Sprintf("ethash_ellesmere_lws%d.bin", workGroupSize))
+	data, err := gcnSource(fmt.Sprintf("ethash_ellesmere_lws%d_exit.bin", workGroupSize))
 	if err != nil {
 		return err
 	}
