@@ -1049,7 +1049,7 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 				attempts = 0
 			} */
 
-			d.hashRate.Mark(int64(results.hashCount))
+			d.hashRate.Mark(int64(results.hashCount * uint32(d.workGroupSize)))
 		}
 	}
 
