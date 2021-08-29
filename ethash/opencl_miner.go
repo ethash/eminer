@@ -1116,6 +1116,11 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 
 					d.queue.EnqueueWriteBuffer(
 						d.searchBuffers[s.bufIndex], true, uint64(unsafe.Offsetof(searchResults{}.abort)), sizeOfUint32, unsafe.Pointer(&zero[0]), nil)
+
+					err = d.searchKernel.SetArg(0, d.searchBuffers[s.bufIndex])
+					if err != nil {
+						d.logger.Error("Error in seal clSetKernelArg 0", "error", err.Error())
+					}
 				}
 				d.Unlock()
 			}
