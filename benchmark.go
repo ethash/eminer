@@ -95,14 +95,8 @@ func Benchmark(stopChan chan struct{}) {
 						"max", formatter(miner.FoundSolutions.Max()))
 				}
 
-				go func() {
-					time.Sleep(100 * time.Millisecond)
-					miner.Lock()
-					miner.Work.HeaderHash = common.BytesToHash(common.FromHex(randomHash()))
-					miner.Unlock()
-
-					miner.WorkChanged()
-				}()
+				miner.Work.HeaderHash = common.BytesToHash(common.FromHex(randomHash()))
+				miner.WorkChanged()
 			}
 		}
 
