@@ -247,7 +247,7 @@ wait:
 		return
 	}
 
-	time.Sleep(3 * time.Second)
+	time.Sleep(time.Second)
 
 	adl.Release()
 	nvml.Release()
