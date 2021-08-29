@@ -890,7 +890,7 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 		s.workChanged = true
 
 		for !c.stop {
-			s.headerHash = headerHash
+			s.headerHash.SetBytes(headerHash[:])
 
 			var results searchResults
 
