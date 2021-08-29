@@ -642,7 +642,8 @@ func (c *OpenCLMiner) generateDAGOnDevice(d *OpenCLDevice) error {
 			return fmt.Errorf("set arg failed %v", err)
 		}
 
-		_, err = d.queue.EnqueueNDRangeKernel(dagKernel,
+		var event *cl.Event
+		event, err = d.queue.EnqueueNDRangeKernel(dagKernel,
 			[]int{0},
 			[]int{int(dagGlobalWorkSize)},
 			[]int{int(dagWorkGroupSize)}, nil)
@@ -653,6 +654,11 @@ func (c *OpenCLMiner) generateDAGOnDevice(d *OpenCLDevice) error {
 		err = d.queue.Flush()
 		if err != nil {
 			return fmt.Errorf("clFlush dag queue failed %v", err)
+		}
+
+		err = cl.WaitForEvents([]*cl.Event{event})
+		if err != nil {
+			return fmt.Errorf("error in dag wait events %v", err)
 		}
 
 		elapsed := time.Now().UnixNano() - start
