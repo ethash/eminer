@@ -94,11 +94,18 @@ func Benchmark(stopChan chan struct{}) {
 						"mean", formatter(int64(miner.FoundSolutions.Mean())), "min", formatter(miner.FoundSolutions.Min()),
 						"max", formatter(miner.FoundSolutions.Max()))
 				}
-
-				miner.Work.HeaderHash = common.BytesToHash(common.FromHex(randomHash()))
-				miner.WorkChanged()
 			}
 		}
+
+		go func() {
+			for {
+				time.Sleep(time.Second)
+				miner.Work.HeaderHash = common.BytesToHash(common.FromHex(randomHash()))
+				miner.WorkChanged()
+
+				log.Info("Work changed, new work", "hash", miner.Work.HeaderHash.TerminalString(), "difficulty", fmt.Sprintf("%.3f GH", float64(miner.Work.Difficulty().Uint64())/1e9))
+			}
+		}()
 
 		miner.Seal(stopSeal, deviceID, onSolutionFound)
 	}

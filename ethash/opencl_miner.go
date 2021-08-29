@@ -56,7 +56,7 @@ type OpenCLDevice struct {
 
 	searchBuffers []*cl.MemObject
 
-	searchKernel *cl.Kernel
+	searchKernel []*cl.Kernel
 
 	queue        *cl.CommandQueue
 	queueWorkers []*cl.CommandQueue
@@ -151,7 +151,7 @@ const (
 	amdIntensity    = 16
 	nvidiaIntensity = 8
 
-	defaultSearchBufSize = 1
+	defaultSearchBufSize = 4
 )
 
 var searchBufSize int
@@ -224,10 +224,6 @@ func (c *OpenCLMiner) InitCL() error {
 	c.cacheSize = cacheSize(blockNum)
 
 	searchBufSize = defaultSearchBufSize
-
-	if runtime.GOOS == "windows" {
-		searchBufSize = 1
-	}
 
 	var wg sync.WaitGroup
 	var errd error
@@ -489,9 +485,12 @@ func (c *OpenCLMiner) createBinaryProgramOnDevice(d *OpenCLDevice, workGroupSize
 		return fmt.Errorf("program build err: %v", err)
 	}
 
-	d.searchKernel, err = d.program.CreateKernel("search")
-	if err != nil {
-		return
+	d.searchKernel = make([]*cl.Kernel, searchBufSize)
+	for i := 0; i < searchBufSize; i++ {
+		d.searchKernel[i], err = d.program.CreateKernel("search")
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -523,9 +522,12 @@ func (c *OpenCLMiner) createSourceProgramOnDevice(d *OpenCLDevice) (err error) {
 		return fmt.Errorf("program build err: %v", err)
 	}
 
-	d.searchKernel, err = d.program.CreateKernel("search")
-	if err != nil {
-		return fmt.Errorf("create kernel err: %v", err)
+	d.searchKernel = make([]*cl.Kernel, searchBufSize)
+	for i := 0; i < searchBufSize; i++ {
+		d.searchKernel[i], err = d.program.CreateKernel("search")
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -681,7 +683,9 @@ func (c *OpenCLMiner) ChangeDAGOnAllDevices() (err error) {
 	for _, d := range c.devices {
 		d.dagBuf1.Release()
 		d.dagBuf2.Release()
-		d.searchKernel.Release()
+		for _, searchKernel := range d.searchKernel {
+			searchKernel.Release()
+		}
 		d.program.Release()
 		d.dagProgram.Release()
 
@@ -727,7 +731,9 @@ func (c *OpenCLMiner) ReleaseAll() {
 		d.queue.Release()
 		d.program.Release()
 		d.dagProgram.Release()
-		d.searchKernel.Release()
+		for _, searchKernel := range d.searchKernel {
+			searchKernel.Release()
+		}
 		d.dagBuf1.Release()
 		d.dagBuf2.Release()
 		d.headerBuf.Release()
@@ -751,7 +757,9 @@ func (c *OpenCLMiner) Release(deviceID int) {
 	d.queue.Release()
 	d.program.Release()
 	d.dagProgram.Release()
-	d.searchKernel.Release()
+	for _, searchKernel := range d.searchKernel {
+		searchKernel.Release()
+	}
 	d.dagBuf1.Release()
 	d.dagBuf2.Release()
 	d.headerBuf.Release()
@@ -815,36 +823,6 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 		return err
 	}
 
-	err = d.searchKernel.SetArg(1, d.headerBuf)
-	if err != nil {
-		d.logger.Error("Error in seal clSetKernelArg 1", "error", err.Error())
-		return err
-	}
-
-	err = d.searchKernel.SetArg(2, d.dagBuf1)
-	if err != nil {
-		d.logger.Error("Error in seal clSetKernelArg 2", "error", err.Error())
-		return err
-	}
-
-	err = d.searchKernel.SetArg(3, d.dagBuf2)
-	if err != nil {
-		d.logger.Error("Error in seal clSetKernelArg 3", "error", err.Error())
-		return err
-	}
-
-	err = d.searchKernel.SetArg(4, uint32(c.dagSize/mixBytes))
-	if err != nil {
-		d.logger.Error("Error in seal clSetKernelArg 4", "error", err.Error())
-		return err
-	}
-
-	err = d.searchKernel.SetArg(6, target64)
-	if err != nil {
-		d.logger.Error("Error in seal clSetKernelArg 6", "error", err.Error())
-		return err
-	}
-
 	regName := fmt.Sprintf("%s.gpu.%d.hashrate", c.workerName, deviceID)
 
 	metrics.Unregister(regName)
@@ -857,6 +835,36 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 		runtime.LockOSThread()
 
 		// attempts := uint64(0)
+
+		err = d.searchKernel[s.bufIndex].SetArg(1, d.headerBuf)
+		if err != nil {
+			d.logger.Error("Error in seal clSetKernelArg 1", "error", err.Error())
+			return
+		}
+
+		err = d.searchKernel[s.bufIndex].SetArg(2, d.dagBuf1)
+		if err != nil {
+			d.logger.Error("Error in seal clSetKernelArg 2", "error", err.Error())
+			return
+		}
+
+		err = d.searchKernel[s.bufIndex].SetArg(3, d.dagBuf2)
+		if err != nil {
+			d.logger.Error("Error in seal clSetKernelArg 3", "error", err.Error())
+			return
+		}
+
+		err = d.searchKernel[s.bufIndex].SetArg(4, uint32(c.dagSize/mixBytes))
+		if err != nil {
+			d.logger.Error("Error in seal clSetKernelArg 4", "error", err.Error())
+			return
+		}
+
+		err = d.searchKernel[s.bufIndex].SetArg(6, target64)
+		if err != nil {
+			d.logger.Error("Error in seal clSetKernelArg 6", "error", err.Error())
+			return
+		}
 
 		var minWorkerRand, maxWorkerRand int64
 		segWorker := (maxDeviceRand - minDeviceRand) / int64(searchBufSize)
@@ -888,25 +896,40 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 
 			d.Lock()
 			if s.workChanged {
-				_, err = d.queueWorkers[s.bufIndex].EnqueueWriteBuffer(d.headerBuf, true, 0, 32, unsafe.Pointer(&headerHash[0]), nil)
+				_, err = d.queueWorkers[s.bufIndex].EnqueueWriteBuffer(d.headerBuf, false, 0, 32, unsafe.Pointer(&headerHash[0]), nil)
 				if err != nil {
 					d.logger.Error("Error in seal clEnqueueWriterBuffer", "error", err.Error())
 					d.Unlock()
 					continue
 				}
 
-				err = d.searchKernel.SetArg(1, d.headerBuf)
+				err = d.searchKernel[s.bufIndex].SetArg(1, d.headerBuf)
 				if err != nil {
 					d.logger.Error("Error in seal clSetKernelArg 1", "error", err.Error())
 					d.Unlock()
 					continue
 				}
 
-				_, err = d.queueWorkers[s.bufIndex].EnqueueWriteBuffer(d.searchBuffers[s.bufIndex], true, uint64(unsafe.Offsetof(results.count)), 3*sizeOfUint32, unsafe.Pointer(&zero[0]), nil)
+				_, err = d.queueWorkers[s.bufIndex].EnqueueWriteBuffer(d.searchBuffers[s.bufIndex], false, uint64(unsafe.Offsetof(results.count)), 3*sizeOfUint32, unsafe.Pointer(&zero[0]), nil)
 				if err != nil {
 					d.logger.Error("Error write in seal clear buffers", "error", err.Error())
 					d.Unlock()
 					continue
+				}
+
+				if target256.Cmp(c.Work.Target256) != 0 {
+					target256 = new(big.Int).SetBytes(c.Work.Target256.Bytes())
+
+					if !c.Work.FixedDifficulty {
+						target64 = new(big.Int).Rsh(target256, 192).Uint64()
+
+						err = d.searchKernel[s.bufIndex].SetArg(6, target64)
+						if err != nil {
+							d.logger.Error("Error in seal clSetKernelArg 6", "error", err.Error())
+							d.Unlock()
+							continue
+						}
+					}
 				}
 
 				if extraNonce > 0 {
@@ -916,17 +939,17 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 				}
 				s.workChanged = false
 
-				d.logger.Debug("Work changed on GPU", "hash", headerHash.TerminalString(), "difficulty", fmt.Sprintf("%.3f GH", float64(c.Work.Difficulty().Uint64())/1e9))
+				d.logger.Debug("Work changed on GPU", "worker", s.bufIndex, "hash", headerHash.TerminalString(), "difficulty", fmt.Sprintf("%.3f GH", float64(c.Work.Difficulty().Uint64())/1e9))
 			}
 
-			err = d.searchKernel.SetArg(0, d.searchBuffers[s.bufIndex])
+			err = d.searchKernel[s.bufIndex].SetArg(0, d.searchBuffers[s.bufIndex])
 			if err != nil {
 				d.logger.Error("Error in seal clSetKernelArg 0", "error", err.Error())
 				d.Unlock()
 				continue
 			}
 
-			err = d.searchKernel.SetArg(5, s.startNonce)
+			err = d.searchKernel[s.bufIndex].SetArg(5, s.startNonce)
 			if err != nil {
 				d.logger.Error("Error in seal clSetKernelArg 5", "error", err.Error())
 				d.Unlock()
@@ -934,7 +957,7 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 			}
 
 			_, err = d.queueWorkers[s.bufIndex].EnqueueNDRangeKernel(
-				d.searchKernel,
+				d.searchKernel[s.bufIndex],
 				[]int{0},
 				[]int{int(d.globalWorkSize)},
 				[]int{int(d.workGroupSize)},
@@ -985,6 +1008,15 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 							mixDigest := make([]byte, common.HashLength)
 							for z, val := range results.rslt[i].mix {
 								binary.LittleEndian.PutUint32(mixDigest[z*4:], val)
+							}
+
+							number := c.Work.BlockNumberU64()
+							cache := c.ethash.cache(number)
+							mix, _ := hashimotoLight(c.dagSize, cache, s.headerHash.Bytes(), checkNonce)
+
+							if !bytes.Equal(mix, mixDigest) {
+								fmt.Println("MIX not verified", mix, mixDigest)
+								continue
 							}
 
 							seed := make([]byte, 40)
@@ -1062,22 +1094,6 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 
 		case <-c.workCh:
 			c.Lock()
-			//if the new target > then current one change immediately
-			if target256.Cmp(c.Work.Target256) > 0 {
-				target256 = new(big.Int).SetBytes(c.Work.Target256.Bytes())
-
-				if !c.Work.FixedDifficulty {
-					target64 = new(big.Int).Rsh(target256, 192).Uint64()
-
-					err = d.searchKernel.SetArg(6, target64)
-					if err != nil {
-						d.logger.Error("Error in seal clSetKernelArg 6", "error", err.Error())
-						c.Unlock()
-						goto done
-					}
-				}
-			}
-
 			if c.Work.ExtraNonce != extraNonce {
 				extraNonce = c.Work.ExtraNonce
 
@@ -1091,22 +1107,6 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 			if !bytes.Equal(headerHash.Bytes(), c.Work.HeaderHash.Bytes()) {
 				headerHash = c.Work.HeaderHash
 
-				//Some pools doesn't accept solutions with old work like nicehash
-				if target256.Cmp(c.Work.Target256) != 0 {
-					target256 = new(big.Int).SetBytes(c.Work.Target256.Bytes())
-
-					if !c.Work.FixedDifficulty {
-						target64 = new(big.Int).Rsh(target256, 192).Uint64()
-
-						err = d.searchKernel.SetArg(6, target64)
-						if err != nil {
-							d.logger.Error("Error in seal clSetKernelArg 6", "error", err.Error())
-							c.Unlock()
-							goto done
-						}
-					}
-				}
-
 				d.Lock()
 				one := uint32(1)
 				for _, s := range workers {
@@ -1115,9 +1115,10 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 					d.queue.EnqueueWriteBuffer(
 						d.searchBuffers[s.bufIndex], true, uint64(unsafe.Offsetof(searchResults{}.abort)), sizeOfUint32, unsafe.Pointer(&one), nil)
 
-					err = d.searchKernel.SetArg(0, d.searchBuffers[s.bufIndex])
+					err = d.searchKernel[s.bufIndex].SetArg(0, d.searchBuffers[s.bufIndex])
 					if err != nil {
 						d.logger.Error("Error in seal clSetKernelArg 0", "error", err.Error())
+						goto done
 					}
 				}
 				d.Unlock()
