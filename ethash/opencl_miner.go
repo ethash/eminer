@@ -890,7 +890,9 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 		s.workChanged = true
 
 		for !c.stop {
+			c.RLock()
 			s.headerHash.SetBytes(headerHash[:])
+			c.RUnlock()
 
 			var results searchResults
 
