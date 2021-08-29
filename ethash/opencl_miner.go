@@ -888,16 +888,9 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 
 			d.Lock()
 			if s.workChanged {
-				_, err = d.queueWorkers[s.bufIndex].EnqueueWriteBuffer(d.headerBuf, false, 0, 32, unsafe.Pointer(&headerHash[0]), nil)
+				_, err = d.queueWorkers[s.bufIndex].EnqueueWriteBuffer(d.headerBuf, true, 0, 32, unsafe.Pointer(&headerHash[0]), nil)
 				if err != nil {
 					d.logger.Error("Error in seal clEnqueueWriterBuffer", "error", err.Error())
-					d.Unlock()
-					continue
-				}
-
-				_, err = d.queueWorkers[s.bufIndex].EnqueueWriteBuffer(d.searchBuffers[s.bufIndex], false, uint64(unsafe.Offsetof(results.count)), 3*sizeOfUint32, unsafe.Pointer(&zero[0]), nil)
-				if err != nil {
-					d.logger.Error("Error write in seal clear buffers", "error", err.Error())
 					d.Unlock()
 					continue
 				}
@@ -905,6 +898,13 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 				err = d.searchKernel.SetArg(1, d.headerBuf)
 				if err != nil {
 					d.logger.Error("Error in seal clSetKernelArg 1", "error", err.Error())
+					d.Unlock()
+					continue
+				}
+
+				_, err = d.queueWorkers[s.bufIndex].EnqueueWriteBuffer(d.searchBuffers[s.bufIndex], true, uint64(unsafe.Offsetof(results.count)), 3*sizeOfUint32, unsafe.Pointer(&zero[0]), nil)
+				if err != nil {
+					d.logger.Error("Error write in seal clear buffers", "error", err.Error())
 					d.Unlock()
 					continue
 				}
@@ -1022,7 +1022,7 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 			}
 
 		clear:
-			_, err = d.queueWorkers[s.bufIndex].EnqueueWriteBuffer(d.searchBuffers[s.bufIndex], false, uint64(unsafe.Offsetof(results.count)), 3*sizeOfUint32, unsafe.Pointer(&zero[0]), nil)
+			_, err = d.queueWorkers[s.bufIndex].EnqueueWriteBuffer(d.searchBuffers[s.bufIndex], true, uint64(unsafe.Offsetof(results.count)), 3*sizeOfUint32, unsafe.Pointer(&zero[0]), nil)
 			if err != nil {
 				d.logger.Error("Error write in seal clear buffers", "error", err.Error())
 			}
