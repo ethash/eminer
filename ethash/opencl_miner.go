@@ -944,6 +944,8 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 			}
 			d.Unlock()
 
+			d.queueWorkers[s.bufIndex].Finish()
+
 			_, err = d.queueWorkers[s.bufIndex].EnqueueReadBuffer(d.searchBuffers[s.bufIndex], true, uint64(unsafe.Offsetof(results.count)), 2*sizeOfUint32, unsafe.Pointer(&results.count), nil)
 			if err != nil {
 				d.logger.Error("Error read in seal searchBuffer count", "error", err.Error())
@@ -973,9 +975,6 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 				}
 				c.RUnlock()
 
-				hh := make([]byte, len(headerHash))
-				copy(hh, headerHash[:])
-
 				go func(results *searchResults, startNonce uint64, hh common.Hash) {
 					for i := uint32(0); i < results.count; i++ {
 						upperNonce := uint64(results.rslt[i].gid)
@@ -987,7 +986,7 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 							}
 
 							seed := make([]byte, 40)
-							copy(seed, headerHash[:])
+							copy(seed, hh[:])
 							binary.LittleEndian.PutUint64(seed[32:], checkNonce)
 
 							seed = crypto.Keccak512(seed)
@@ -996,7 +995,7 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 
 							if new(big.Int).SetBytes(foundTarget).Cmp(target256) <= 0 {
 								d.logger.Info("Solution found and verified", "worker", s.bufIndex,
-									"hash", headerHash.TerminalString())
+									"hash", hh.TerminalString())
 
 								c.SolutionsHashRate.Mark(c.Work.Difficulty().Int64())
 
@@ -1021,7 +1020,7 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 							}
 						}
 					}
-				}(&results, s.startNonce, common.BytesToHash(hh))
+				}(&results, s.startNonce, s.headerHash)
 			}
 
 		clear:
@@ -1112,7 +1111,7 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 					s.workChanged = true
 
 					d.queue.EnqueueWriteBuffer(
-						d.searchBuffers[s.bufIndex], false, uint64(unsafe.Offsetof(searchResults{}.abort)), sizeOfUint32, unsafe.Pointer(&one), nil)
+						d.searchBuffers[s.bufIndex], true, uint64(unsafe.Offsetof(searchResults{}.abort)), sizeOfUint32, unsafe.Pointer(&one), nil)
 
 					err = d.searchKernel.SetArg(0, d.searchBuffers[s.bufIndex])
 					if err != nil {
