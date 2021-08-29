@@ -895,9 +895,16 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 			s.headerHash.SetBytes(headerHash[:])
 
 			if s.workChanged {
-				_, err = d.queueWorkers[s.bufIndex].EnqueueWriteBuffer(d.headerBuf, false, 0, 32, unsafe.Pointer(&s.headerHash[0]), nil)
+				_, err = d.queueWorkers[s.bufIndex].EnqueueWriteBuffer(d.headerBuf, true, 0, 32, unsafe.Pointer(&s.headerHash[0]), nil)
 				if err != nil {
 					d.logger.Error("Error in seal clEnqueueWriterBuffer", "error", err.Error())
+					d.Unlock()
+					continue
+				}
+
+				_, err = d.queueWorkers[s.bufIndex].EnqueueWriteBuffer(d.searchBuffers[s.bufIndex], true, uint64(unsafe.Offsetof(results.count)), 3*sizeOfUint32, unsafe.Pointer(&zero[0]), nil)
+				if err != nil {
+					d.logger.Error("Error write in seal clear buffers", "error", err.Error())
 					d.Unlock()
 					continue
 				}
@@ -905,13 +912,6 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 				err = d.searchKernel[s.bufIndex].SetArg(1, d.headerBuf)
 				if err != nil {
 					d.logger.Error("Error in seal clSetKernelArg 1", "error", err.Error())
-					d.Unlock()
-					continue
-				}
-
-				_, err = d.queueWorkers[s.bufIndex].EnqueueWriteBuffer(d.searchBuffers[s.bufIndex], false, uint64(unsafe.Offsetof(results.count)), 3*sizeOfUint32, unsafe.Pointer(&zero[0]), nil)
-				if err != nil {
-					d.logger.Error("Error write in seal clear buffers", "error", err.Error())
 					d.Unlock()
 					continue
 				}
@@ -937,6 +937,8 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 					s.startNonce = uint64(d.nonceRand.Int63n(maxWorkerRand-minWorkerRand) + minWorkerRand)
 				}
 				s.workChanged = false
+
+				d.queueWorkers[s.bufIndex].Flush()
 
 				d.logger.Debug("Work changed on GPU", "worker", s.bufIndex, "hash", s.headerHash.TerminalString())
 			}
