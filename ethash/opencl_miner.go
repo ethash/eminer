@@ -811,13 +811,7 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 
 	maxDeviceRand = segDevice * int64(idx+1)
 
-	_, err := d.queue.EnqueueWriteBuffer(d.headerBuf, false, 0, 32, unsafe.Pointer(&headerHash[0]), nil)
-	if err != nil {
-		d.logger.Error("Error in seal clEnqueueWriterBuffer", "error", err.Error())
-		return err
-	}
-
-	err = d.queue.Finish()
+	err := d.queue.Finish()
 	if err != nil {
 		d.logger.Error("Error in seal clFinish", "error", err.Error())
 		return err
@@ -887,14 +881,23 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 
 		defer searchGroup.Done()
 
+		s.workChanged = true
+
 		for !c.stop {
 			s.headerHash = headerHash
 
 			d.Lock()
 			if s.workChanged {
-				_, err = d.queueWorkers[s.bufIndex].EnqueueWriteBuffer(d.headerBuf, false, 0, 32, unsafe.Pointer(&headerHash[0]), nil)
+				_, err = d.queueWorkers[s.bufIndex].EnqueueWriteBuffer(d.headerBuf, true, 0, 32, unsafe.Pointer(&headerHash[0]), nil)
 				if err != nil {
 					d.logger.Error("Error in seal clEnqueueWriterBuffer", "error", err.Error())
+					d.Unlock()
+					continue
+				}
+
+				err = d.searchKernel.SetArg(1, d.headerBuf)
+				if err != nil {
+					d.logger.Error("Error in seal clSetKernelArg 1", "error", err.Error())
 					d.Unlock()
 					continue
 				}
@@ -1025,8 +1028,6 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 				if err != nil {
 					d.logger.Error("Error write in seal clear buffers", "error", err.Error())
 				}
-
-				results.count = 0
 			}
 
 			s.startNonce = s.startNonce + d.globalWorkSize
