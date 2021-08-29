@@ -46,7 +46,7 @@ var (
 )
 
 var (
-	version     = "1.1"
+	version     = "2.0"
 	httpServer  = &http.Server{}
 	virtualTerm = false
 )

@@ -226,7 +226,7 @@ func (c *OpenCLMiner) InitCL() error {
 	searchBufSize = defaultSearchBufSize
 
 	if runtime.GOOS == "windows" {
-		searchBufSize = 2
+		searchBufSize = 1
 	}
 
 	var wg sync.WaitGroup
@@ -915,6 +915,8 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 					s.startNonce = uint64(d.nonceRand.Int63n(maxWorkerRand-minWorkerRand) + minWorkerRand)
 				}
 				s.workChanged = false
+
+				d.logger.Debug("Work changed on GPU", "hash", headerHash.TerminalString(), "difficulty", fmt.Sprintf("%.3f GH", float64(c.Work.Difficulty().Uint64())/1e9))
 			}
 
 			err = d.searchKernel.SetArg(0, d.searchBuffers[s.bufIndex])
