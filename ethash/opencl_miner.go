@@ -617,8 +617,6 @@ func (c *OpenCLMiner) generateDAGOnDevice(d *OpenCLDevice) error {
 		fullRuns++
 	}
 
-	d.queue.Finish()
-
 	err = dagKernel.SetArg(1, cacheBuf)
 	if err != nil {
 		return fmt.Errorf("set arg failed %v", err)
@@ -652,9 +650,9 @@ func (c *OpenCLMiner) generateDAGOnDevice(d *OpenCLDevice) error {
 			return fmt.Errorf("enqueue dag kernel failed %v", err)
 		}
 
-		err = d.queue.Finish()
+		err = d.queue.Flush()
 		if err != nil {
-			return fmt.Errorf("clFinish dag queue failed %v", err)
+			return fmt.Errorf("clFlush dag queue failed %v", err)
 		}
 
 		elapsed := time.Now().UnixNano() - start
@@ -817,12 +815,6 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 
 	maxDeviceRand = segDevice * int64(idx+1)
 
-	err := d.queue.Finish()
-	if err != nil {
-		d.logger.Error("Error in seal clFinish", "error", err.Error())
-		return err
-	}
-
 	regName := fmt.Sprintf("%s.gpu.%d.hashrate", c.workerName, deviceID)
 
 	metrics.Unregister(regName)
@@ -836,7 +828,7 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 
 		// attempts := uint64(0)
 
-		err = d.searchKernel[s.bufIndex].SetArg(1, d.headerBuf)
+		err := d.searchKernel[s.bufIndex].SetArg(1, d.headerBuf)
 		if err != nil {
 			d.logger.Error("Error in seal clSetKernelArg 1", "error", err.Error())
 			return
@@ -971,7 +963,7 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 
 			d.Unlock()
 
-			d.queueWorkers[s.bufIndex].Finish()
+			d.queueWorkers[s.bufIndex].Flush()
 
 			_, err = d.queueWorkers[s.bufIndex].EnqueueReadBuffer(d.searchBuffers[s.bufIndex], true, uint64(unsafe.Offsetof(results.count)), 3*sizeOfUint32, unsafe.Pointer(&results.count), nil)
 			if err != nil {
@@ -984,7 +976,7 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 					results.count = maxSearchResults + 1
 				}
 
-				_, err = d.queueWorkers[s.bufIndex].EnqueueReadBuffer(d.searchBuffers[s.bufIndex], false, 0, uint64(results.count*uint32(unsafe.Sizeof(results.rslt[0]))), unsafe.Pointer(&results.rslt[0]), nil)
+				_, err = d.queueWorkers[s.bufIndex].EnqueueReadBuffer(d.searchBuffers[s.bufIndex], true, 0, uint64(results.count*uint32(unsafe.Sizeof(results.rslt[0]))), unsafe.Pointer(&results.rslt[0]), nil)
 				if err != nil {
 					d.logger.Error("Error read in seal searchBuffer results", "error", err.Error())
 					goto clear
@@ -1001,8 +993,6 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 					goto clear
 				}
 				c.RUnlock()
-
-				d.queueWorkers[s.bufIndex].Finish()
 
 				for i := uint32(0); i < results.count; i++ {
 					upperNonce := uint64(results.rslt[i].gid)
@@ -1118,7 +1108,7 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 					d.queue.EnqueueWriteBuffer(
 						d.searchBuffers[s.bufIndex], true, uint64(unsafe.Offsetof(searchResults{}.abort)), sizeOfUint32, unsafe.Pointer(&abort), nil)
 
-					err = d.searchKernel[s.bufIndex].SetArg(0, d.searchBuffers[s.bufIndex])
+					err := d.searchKernel[s.bufIndex].SetArg(0, d.searchBuffers[s.bufIndex])
 					if err != nil {
 						d.logger.Error("Error in seal clSetKernelArg 0", "error", err.Error())
 					}
