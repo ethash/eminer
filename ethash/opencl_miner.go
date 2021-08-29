@@ -940,7 +940,7 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 				}
 				s.workChanged = false
 
-				d.logger.Debug("Work changed on GPU", "worker", s.bufIndex, "hash", headerHash.TerminalString(), "difficulty", fmt.Sprintf("%.3f GH", float64(c.Work.Difficulty().Uint64())/1e9))
+				d.logger.Debug("Work changed on GPU", "worker", s.bufIndex, "hash", s.headerHash.TerminalString())
 			}
 
 			err = d.searchKernel[s.bufIndex].SetArg(0, d.searchBuffers[s.bufIndex])
@@ -973,13 +973,13 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 
 			d.queueWorkers[s.bufIndex].Finish()
 
-			_, err = d.queueWorkers[s.bufIndex].EnqueueReadBuffer(d.searchBuffers[s.bufIndex], true, uint64(unsafe.Offsetof(results.count)), 2*sizeOfUint32, unsafe.Pointer(&results.count), nil)
+			_, err = d.queueWorkers[s.bufIndex].EnqueueReadBuffer(d.searchBuffers[s.bufIndex], true, uint64(unsafe.Offsetof(results.count)), 3*sizeOfUint32, unsafe.Pointer(&results.count), nil)
 			if err != nil {
 				d.logger.Error("Error read in seal searchBuffer count", "error", err.Error())
 				continue
 			}
 
-			if results.count > 0 && !s.workChanged {
+			if results.count > 0 {
 				if results.count > maxSearchResults+1 {
 					results.count = maxSearchResults + 1
 				}
@@ -1080,7 +1080,7 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 		go worker(s)
 	}
 
-	abort := uint32(1)
+	abort := uint32(255)
 
 	for {
 		select {
