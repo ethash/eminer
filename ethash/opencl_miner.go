@@ -888,11 +888,11 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 		s.workChanged = true
 
 		for !c.stop {
+			var results searchResults
+
 			d.Lock()
 
 			s.headerHash.SetBytes(headerHash[:])
-
-			var results searchResults
 
 			if s.workChanged {
 				_, err = d.queueWorkers[s.bufIndex].EnqueueWriteBuffer(d.headerBuf, false, 0, 32, unsafe.Pointer(&s.headerHash[0]), nil)
@@ -971,29 +971,28 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 
 			d.queueWorkers[s.bufIndex].Flush()
 
-			_, err = d.queueWorkers[s.bufIndex].EnqueueReadBuffer(d.searchBuffers[s.bufIndex], true, uint64(unsafe.Offsetof(results.count)), 3*sizeOfUint32, unsafe.Pointer(&results.count), nil)
+			d.RLock()
+			_, err = d.queueWorkers[s.bufIndex].EnqueueReadBuffer(d.searchBuffers[s.bufIndex], true, uint64(unsafe.Offsetof(results.count)), 2*sizeOfUint32, unsafe.Pointer(&results.count), nil)
 			if err != nil {
 				d.logger.Error("Error read in seal searchBuffer count", "error", err.Error())
+				d.RUnlock()
 				continue
 			}
+			d.RUnlock()
 
 			if results.count > 0 {
 				if results.count > maxSearchResults+1 {
 					results.count = maxSearchResults + 1
 				}
 
-				var event *cl.Event
-				event, err = d.queueWorkers[s.bufIndex].EnqueueReadBuffer(d.searchBuffers[s.bufIndex], false, 0, uint64(results.count*uint32(unsafe.Sizeof(results.rslt[0]))), unsafe.Pointer(&results.rslt[0]), nil)
+				d.RLock()
+				_, err = d.queueWorkers[s.bufIndex].EnqueueReadBuffer(d.searchBuffers[s.bufIndex], true, 0, uint64(results.count*uint32(unsafe.Sizeof(results.rslt[0]))), unsafe.Pointer(&results.rslt[0]), nil)
 				if err != nil {
 					d.logger.Error("Error read in seal searchBuffer results", "error", err.Error())
+					d.RUnlock()
 					goto clear
 				}
-
-				d.queueWorkers[s.bufIndex].Flush()
-
-				for !event.ExecutionCompleted() {
-					time.Sleep(1e3 * time.Nanosecond)
-				}
+				d.RUnlock()
 
 				c.RLock()
 				if !bytes.Equal(s.headerHash.Bytes(), c.Work.HeaderHash.Bytes()) {
