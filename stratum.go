@@ -203,7 +203,6 @@ func Stratum(stopChan <-chan struct{}) {
 		httpServer.SetMiner(miner)
 	}
 
-	miner.WorkChanged()
 	miner.Poll()
 
 	for {
