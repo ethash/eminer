@@ -983,7 +983,7 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 				}
 
 				d.RLock()
-				_, err = d.queueWorkers[s.bufIndex].EnqueueReadBuffer(d.searchBuffers[s.bufIndex], true, 0, uint64(results.count*uint32(unsafe.Sizeof(results.rslt[0]))), unsafe.Pointer(&results.rslt[0]), nil)
+				_, err = d.queueWorkers[s.bufIndex].EnqueueReadBuffer(d.searchBuffers[s.bufIndex], true, 0, uint64(results.count*uint32(unsafe.Sizeof(results.rslt[0]))), unsafe.Pointer(&results), nil)
 				if err != nil {
 					d.logger.Error("Error read in seal searchBuffer results", "error", err.Error())
 					d.RUnlock()
@@ -1003,60 +1003,62 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 				}
 				c.RUnlock()
 
-				for i := uint32(0); i < results.count; i++ {
-					upperNonce := uint64(results.rslt[i].gid)
-					checkNonce := s.startNonce + upperNonce
-					if checkNonce != 0 {
-						mixDigest := make([]byte, common.HashLength)
-						for z, val := range results.rslt[i].mix {
-							binary.LittleEndian.PutUint32(mixDigest[z*4:], val)
-						}
-
-						number := c.Work.BlockNumberU64()
-						cache := c.ethash.cache(number)
-						mix, _ := hashimotoLight(c.dagSize, cache, s.headerHash.Bytes(), checkNonce)
-
-						if !bytes.Equal(mix, mixDigest) {
-							fmt.Println("MIX not verified", mix, mixDigest)
-							fmt.Println(results)
-							continue
-						}
-
-						seed := make([]byte, 40)
-						copy(seed, s.headerHash[:])
-						binary.LittleEndian.PutUint64(seed[32:], checkNonce)
-
-						seed = crypto.Keccak512(seed)
-
-						foundTarget := crypto.Keccak256(append(seed, mixDigest...))
-
-						if new(big.Int).SetBytes(foundTarget).Cmp(target256) <= 0 {
-							d.logger.Info("Solution found and verified", "worker", s.bufIndex,
-								"hash", s.headerHash.TerminalString())
-
-							c.SolutionsHashRate.Mark(c.Work.Difficulty().Int64())
-
-							roundVariance := uint64(100)
-							if c.Work.FixedDifficulty {
-								d.roundCount.Put()
-								roundCount := d.roundCount.Count() * c.Work.MinerDifficulty().Uint64()
-								roundVariance = roundCount * 100 / c.Work.Difficulty().Uint64()
+				go func(results *searchResults, startNonce uint64, hh common.Hash) {
+					for i := uint32(0); i < results.count; i++ {
+						upperNonce := uint64(results.rslt[i].gid)
+						checkNonce := startNonce + upperNonce
+						if checkNonce != 0 {
+							mixDigest := make([]byte, common.HashLength)
+							for z, val := range results.rslt[i].mix {
+								binary.LittleEndian.PutUint32(mixDigest[z*4:], val)
 							}
 
-							go onSolutionFound(true, checkNonce, mixDigest, roundVariance)
+							number := c.Work.BlockNumberU64()
+							cache := c.ethash.cache(number)
+							mix, _ := hashimotoLight(c.dagSize, cache, hh.Bytes(), checkNonce)
 
-							d.roundCount.Empty()
-
-						} else if c.Work.FixedDifficulty {
-							if new(big.Int).SetBytes(foundTarget).Cmp(c.Work.MinerTarget) <= 0 {
-								d.roundCount.Put()
+							if !bytes.Equal(mix, mixDigest) {
+								fmt.Println("MIX not verified", mix, mixDigest)
+								fmt.Println(results)
+								continue
 							}
-						} else {
-							d.logger.Error("Found corrupt solution, check your device.")
-							c.InvalidSolutions.Inc(1)
+
+							seed := make([]byte, 40)
+							copy(seed, hh[:])
+							binary.LittleEndian.PutUint64(seed[32:], checkNonce)
+
+							seed = crypto.Keccak512(seed)
+
+							foundTarget := crypto.Keccak256(append(seed, mixDigest...))
+
+							if new(big.Int).SetBytes(foundTarget).Cmp(target256) <= 0 {
+								d.logger.Info("Solution found and verified", "worker", s.bufIndex,
+									"hash", hh.TerminalString())
+
+								c.SolutionsHashRate.Mark(c.Work.Difficulty().Int64())
+
+								roundVariance := uint64(100)
+								if c.Work.FixedDifficulty {
+									d.roundCount.Put()
+									roundCount := d.roundCount.Count() * c.Work.MinerDifficulty().Uint64()
+									roundVariance = roundCount * 100 / c.Work.Difficulty().Uint64()
+								}
+
+								go onSolutionFound(true, checkNonce, mixDigest, roundVariance)
+
+								d.roundCount.Empty()
+
+							} else if c.Work.FixedDifficulty {
+								if new(big.Int).SetBytes(foundTarget).Cmp(c.Work.MinerTarget) <= 0 {
+									d.roundCount.Put()
+								}
+							} else {
+								d.logger.Error("Found corrupt solution, check your device.")
+								c.InvalidSolutions.Inc(1)
+							}
 						}
 					}
-				}
+				}(&results, s.startNonce, s.headerHash)
 			}
 
 		clear:
