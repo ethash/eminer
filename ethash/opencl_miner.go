@@ -1073,8 +1073,6 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 			}
 
 			if !bytes.Equal(headerHash.Bytes(), c.Work.HeaderHash.Bytes()) {
-				headerHash = c.Work.HeaderHash
-
 				_, err = d.queue.EnqueueWriteBuffer(d.headerBuf, false, 0, 32, unsafe.Pointer(&headerHash[0]), nil)
 				if err != nil {
 					d.logger.Error("Error in seal clEnqueueWriterBuffer", "error", err.Error())
@@ -1095,6 +1093,8 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 					c.Unlock()
 					goto done
 				}
+
+				headerHash = c.Work.HeaderHash
 
 				//Some pools doesn't accept solutions with old work like nicehash
 				if target256.Cmp(c.Work.Target256) != 0 {
