@@ -946,13 +946,13 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 			}
 			d.Unlock()
 
-			_, err = d.queueWorkers[s.bufIndex].EnqueueReadBuffer(d.searchBuffers[s.bufIndex], true, uint64(unsafe.Offsetof(results.count)), 2*sizeOfUint32, unsafe.Pointer(&results.count), nil)
+			_, err = d.queueWorkers[s.bufIndex].EnqueueReadBuffer(d.searchBuffers[s.bufIndex], true, uint64(unsafe.Offsetof(results.count)), 3*sizeOfUint32, unsafe.Pointer(&results.count), nil)
 			if err != nil {
 				d.logger.Error("Error read in seal searchBuffer count", "error", err.Error())
 				continue
 			}
 
-			if results.count > 0 {
+			if results.count > 0 && results.abort < 255 {
 				if results.count > maxSearchResults+1 {
 					results.count = maxSearchResults + 1
 				}
@@ -980,12 +980,6 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 						upperNonce := uint64(results.rslt[i].gid)
 						checkNonce := startNonce + upperNonce
 						if checkNonce != 0 {
-							// We verify that the nonce is indeed a solution by
-							// executing the Ethash verification function (on the CPU).
-							// number := c.Work.BlockNumberU64()
-							// cache := c.ethash.cache(number)
-							// mixDigest, foundTarget := hashimotoLight(c.dagSize, cache, headerHash.Bytes(), checkNonce)
-
 							mixDigest := make([]byte, common.HashLength)
 							for z, val := range results.rslt[i].mix {
 								binary.LittleEndian.PutUint32(mixDigest[z*4:], val)
@@ -1036,12 +1030,6 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 			}
 
 			s.startNonce = s.startNonce + d.globalWorkSize
-
-			/* attempts++
-			if attempts == 2 {
-				d.hashRate.Mark(int64(d.globalWorkSize * attempts))
-				attempts = 0
-			} */
 
 			d.hashRate.Mark(int64(results.hashCount * uint32(d.workGroupSize)))
 		}
@@ -1118,12 +1106,12 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 				}
 
 				d.Lock()
-				one := uint32(1)
+				cancel := uint32(255)
 				for _, s := range workers {
 					s.workChanged = true
 
 					d.queue.EnqueueWriteBuffer(
-						d.searchBuffers[s.bufIndex], true, uint64(unsafe.Offsetof(searchResults{}.abort)), sizeOfUint32, unsafe.Pointer(&one), nil)
+						d.searchBuffers[s.bufIndex], true, uint64(unsafe.Offsetof(searchResults{}.abort)), sizeOfUint32, unsafe.Pointer(&cancel), nil)
 
 					err = d.searchKernel.SetArg(0, d.searchBuffers[s.bufIndex])
 					if err != nil {
