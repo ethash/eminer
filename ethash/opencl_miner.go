@@ -607,9 +607,8 @@ func (c *OpenCLMiner) generateDAGOnDevice(d *OpenCLDevice) error {
 		return fmt.Errorf("writing to cache buf failed: %v", err)
 	}
 
-	factor := float64(c.dagIntensity) / 16
 	dagWorkGroupSize := uint64(c.dagIntensity * 8)
-	dagGlobalWorkSize := uint64(math.Exp2(float64(c.dagIntensity)/factor)) * dagWorkGroupSize / 8
+	dagGlobalWorkSize := uint64(dagWorkGroupSize * 16384)
 
 	work := uint64(c.dagSize / sizeOfNode)
 	fullRuns := uint64(work / dagGlobalWorkSize)

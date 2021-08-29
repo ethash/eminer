@@ -334,12 +334,9 @@ __kernel void search(
 
 __kernel void generate_dag_item(uint start, __global hash64_t const* g_light,
 	__global hash64_t * g_dag1, __global hash64_t * g_dag2) {
+
 	uint node_id = start + get_global_id(0);
-
 	__global hash64_t * g_dag;
-
-	if (node_id > DAG_SIZE*2) return;
-
 	hash200_t dag_node;
 
 	dag_node.uint16s[0] = g_light[node_id % LIGHT_SIZE].data;
