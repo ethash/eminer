@@ -1118,11 +1118,12 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 				}
 
 				d.Lock()
+				one := uint32(1)
 				for _, s := range workers {
 					s.workChanged = true
 
 					d.queue.EnqueueWriteBuffer(
-						d.searchBuffers[s.bufIndex], true, uint64(unsafe.Offsetof(searchResults{}.abort)), sizeOfUint32, unsafe.Pointer(&zero[0]), nil)
+						d.searchBuffers[s.bufIndex], true, uint64(unsafe.Offsetof(searchResults{}.abort)), sizeOfUint32, unsafe.Pointer(&one), nil)
 
 					err = d.searchKernel.SetArg(0, d.searchBuffers[s.bufIndex])
 					if err != nil {
