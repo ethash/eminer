@@ -899,13 +899,6 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 					continue
 				}
 
-				_, err = d.queueWorkers[s.bufIndex].EnqueueWriteBuffer(d.searchBuffers[s.bufIndex], false, uint64(unsafe.Offsetof(results.count)), 3*sizeOfUint32, unsafe.Pointer(&zero[0]), nil)
-				if err != nil {
-					d.logger.Error("Error write in seal clear buffers", "error", err.Error())
-					d.Unlock()
-					continue
-				}
-
 				d.queueWorkers[s.bufIndex].Finish()
 
 				err = d.searchKernel.SetArg(1, d.headerBuf)
@@ -950,7 +943,7 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 			}
 			d.Unlock()
 
-			_, err = d.queueWorkers[s.bufIndex].EnqueueReadBuffer(d.searchBuffers[s.bufIndex], true, uint64(unsafe.Offsetof(results.count)), 3*sizeOfUint32, unsafe.Pointer(&results.count), nil)
+			_, err = d.queueWorkers[s.bufIndex].EnqueueReadBuffer(d.searchBuffers[s.bufIndex], true, uint64(unsafe.Offsetof(results.count)), 2*sizeOfUint32, unsafe.Pointer(&results.count), nil)
 			if err != nil {
 				d.logger.Error("Error read in seal searchBuffer count", "error", err.Error())
 				continue
@@ -978,67 +971,65 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 					goto clear
 				}
 				c.RUnlock()
-			}
 
-			go func(results *searchResults, startNonce uint64, headerHash common.Hash) {
-				for i := uint32(0); i < results.count; i++ {
-					upperNonce := uint64(results.rslt[i].gid)
-					checkNonce := startNonce + upperNonce
-					if checkNonce != 0 {
-						// We verify that the nonce is indeed a solution by
-						// executing the Ethash verification function (on the CPU).
-						// number := c.Work.BlockNumberU64()
-						// cache := c.ethash.cache(number)
-						// mixDigest, foundTarget := hashimotoLight(c.dagSize, cache, headerHash.Bytes(), checkNonce)
+				go func(results *searchResults, startNonce uint64, headerHash common.Hash) {
+					for i := uint32(0); i < results.count; i++ {
+						upperNonce := uint64(results.rslt[i].gid)
+						checkNonce := startNonce + upperNonce
+						if checkNonce != 0 {
+							// We verify that the nonce is indeed a solution by
+							// executing the Ethash verification function (on the CPU).
+							// number := c.Work.BlockNumberU64()
+							// cache := c.ethash.cache(number)
+							// mixDigest, foundTarget := hashimotoLight(c.dagSize, cache, headerHash.Bytes(), checkNonce)
 
-						mixDigest := make([]byte, common.HashLength)
-						for z, val := range results.rslt[i].mix {
-							binary.LittleEndian.PutUint32(mixDigest[z*4:], val)
-						}
-
-						seed := make([]byte, 40)
-						copy(seed, headerHash[:])
-						binary.LittleEndian.PutUint64(seed[32:], checkNonce)
-
-						seed = crypto.Keccak512(seed)
-
-						foundTarget := crypto.Keccak256(append(seed, mixDigest...))
-
-						if new(big.Int).SetBytes(foundTarget).Cmp(target256) <= 0 {
-							d.logger.Info("Solution found and verified", "worker", s.bufIndex,
-								"hash", headerHash.TerminalString())
-
-							c.SolutionsHashRate.Mark(c.Work.Difficulty().Int64())
-
-							roundVariance := uint64(100)
-							if c.Work.FixedDifficulty {
-								d.roundCount.Put()
-								roundCount := d.roundCount.Count() * c.Work.MinerDifficulty().Uint64()
-								roundVariance = roundCount * 100 / c.Work.Difficulty().Uint64()
+							mixDigest := make([]byte, common.HashLength)
+							for z, val := range results.rslt[i].mix {
+								binary.LittleEndian.PutUint32(mixDigest[z*4:], val)
 							}
 
-							go onSolutionFound(true, checkNonce, mixDigest, roundVariance)
+							seed := make([]byte, 40)
+							copy(seed, headerHash[:])
+							binary.LittleEndian.PutUint64(seed[32:], checkNonce)
 
-							d.roundCount.Empty()
+							seed = crypto.Keccak512(seed)
 
-						} else if c.Work.FixedDifficulty {
-							if new(big.Int).SetBytes(foundTarget).Cmp(c.Work.MinerTarget) <= 0 {
-								d.roundCount.Put()
+							foundTarget := crypto.Keccak256(append(seed, mixDigest...))
+
+							if new(big.Int).SetBytes(foundTarget).Cmp(target256) <= 0 {
+								d.logger.Info("Solution found and verified", "worker", s.bufIndex,
+									"hash", headerHash.TerminalString())
+
+								c.SolutionsHashRate.Mark(c.Work.Difficulty().Int64())
+
+								roundVariance := uint64(100)
+								if c.Work.FixedDifficulty {
+									d.roundCount.Put()
+									roundCount := d.roundCount.Count() * c.Work.MinerDifficulty().Uint64()
+									roundVariance = roundCount * 100 / c.Work.Difficulty().Uint64()
+								}
+
+								go onSolutionFound(true, checkNonce, mixDigest, roundVariance)
+
+								d.roundCount.Empty()
+
+							} else if c.Work.FixedDifficulty {
+								if new(big.Int).SetBytes(foundTarget).Cmp(c.Work.MinerTarget) <= 0 {
+									d.roundCount.Put()
+								}
+							} else {
+								d.logger.Error("Found corrupt solution, check your device.")
+								c.InvalidSolutions.Inc(1)
 							}
-						} else {
-							d.logger.Error("Found corrupt solution, check your device.")
-							c.InvalidSolutions.Inc(1)
 						}
 					}
-				}
-			}(&results, s.startNonce, s.headerHash)
+				}(&results, s.startNonce, s.headerHash)
+			}
 
 		clear:
-			if results.count > 0 {
-				_, err = d.queueWorkers[s.bufIndex].EnqueueWriteBuffer(d.searchBuffers[s.bufIndex], false, uint64(unsafe.Offsetof(results.count)), 3*sizeOfUint32, unsafe.Pointer(&zero[0]), nil)
-				if err != nil {
-					d.logger.Error("Error write in seal clear buffers", "error", err.Error())
-				}
+			_, err = d.queueWorkers[s.bufIndex].EnqueueWriteBuffer(d.searchBuffers[s.bufIndex], false, uint64(unsafe.Offsetof(results.count)), 3*sizeOfUint32, unsafe.Pointer(&zero[0]), nil)
+			if err != nil {
+				d.logger.Error("Error write in seal clear buffers", "error", err.Error())
 			}
 
 			s.startNonce = s.startNonce + d.globalWorkSize
