@@ -941,18 +941,17 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 
 				d.logger.Debug("Work changed on GPU", "worker", s.bufIndex, "hash", headerHash.TerminalString(), "difficulty", fmt.Sprintf("%.3f GH", float64(c.Work.Difficulty().Uint64())/1e9))
 			}
+			d.Unlock()
 
 			err = d.searchKernel[s.bufIndex].SetArg(0, d.searchBuffers[s.bufIndex])
 			if err != nil {
 				d.logger.Error("Error in seal clSetKernelArg 0", "error", err.Error())
-				d.Unlock()
 				continue
 			}
 
 			err = d.searchKernel[s.bufIndex].SetArg(5, s.startNonce)
 			if err != nil {
 				d.logger.Error("Error in seal clSetKernelArg 5", "error", err.Error())
-				d.Unlock()
 				continue
 			}
 
@@ -964,10 +963,8 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 				nil)
 			if err != nil {
 				d.logger.Error("Error in seal clEnqueueNDRangeKernel", "error", err.Error())
-				d.Unlock()
 				continue
 			}
-			d.Unlock()
 
 			d.queueWorkers[s.bufIndex].Finish()
 
@@ -982,7 +979,7 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 					results.count = maxSearchResults + 1
 				}
 
-				_, err = d.queueWorkers[s.bufIndex].EnqueueReadBuffer(d.searchBuffers[s.bufIndex], true, 0, uint64(results.count*uint32(unsafe.Sizeof(results.rslt[0]))), unsafe.Pointer(&results.rslt[0]), nil)
+				_, err = d.queueWorkers[s.bufIndex].EnqueueReadBuffer(d.searchBuffers[s.bufIndex], false, 0, uint64(results.count*uint32(unsafe.Sizeof(results.rslt[0]))), unsafe.Pointer(&results.rslt[0]), nil)
 				if err != nil {
 					d.logger.Error("Error read in seal searchBuffer results", "error", err.Error())
 					goto clear
@@ -1000,6 +997,8 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 				}
 				c.RUnlock()
 
+				d.queueWorkers[s.bufIndex].Finish()
+
 				go func(results *searchResults, startNonce uint64, hh common.Hash) {
 					for i := uint32(0); i < results.count; i++ {
 						upperNonce := uint64(results.rslt[i].gid)
@@ -1016,6 +1015,7 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 
 							if !bytes.Equal(mix, mixDigest) {
 								fmt.Println("MIX not verified", mix, mixDigest)
+								fmt.Println(results)
 								continue
 							}
 
