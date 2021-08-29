@@ -943,17 +943,18 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 
 				d.logger.Debug("Work changed on GPU", "worker", s.bufIndex, "hash", headerHash.TerminalString(), "difficulty", fmt.Sprintf("%.3f GH", float64(c.Work.Difficulty().Uint64())/1e9))
 			}
-			d.Unlock()
 
 			err = d.searchKernel[s.bufIndex].SetArg(0, d.searchBuffers[s.bufIndex])
 			if err != nil {
 				d.logger.Error("Error in seal clSetKernelArg 0", "error", err.Error())
+				d.Unlock()
 				continue
 			}
 
 			err = d.searchKernel[s.bufIndex].SetArg(5, s.startNonce)
 			if err != nil {
 				d.logger.Error("Error in seal clSetKernelArg 5", "error", err.Error())
+				d.Unlock()
 				continue
 			}
 
@@ -965,8 +966,10 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 				nil)
 			if err != nil {
 				d.logger.Error("Error in seal clEnqueueNDRangeKernel", "error", err.Error())
+				d.Unlock()
 				continue
 			}
+			d.Unlock()
 
 			d.queueWorkers[s.bufIndex].Finish()
 
