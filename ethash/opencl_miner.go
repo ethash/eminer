@@ -973,7 +973,10 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 				}
 				c.RUnlock()
 
-				go func(results *searchResults, startNonce uint64, headerHash common.Hash) {
+				hh := make([]byte, len(headerHash))
+				copy(hh, headerHash[:])
+
+				go func(results *searchResults, startNonce uint64, hh common.Hash) {
 					for i := uint32(0); i < results.count; i++ {
 						upperNonce := uint64(results.rslt[i].gid)
 						checkNonce := startNonce + upperNonce
@@ -1018,7 +1021,7 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 							}
 						}
 					}
-				}(&results, s.startNonce, s.headerHash)
+				}(&results, s.startNonce, common.BytesToHash(hh))
 			}
 
 		clear:
