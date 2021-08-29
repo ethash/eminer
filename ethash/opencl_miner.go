@@ -902,8 +902,6 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 					continue
 				}
 
-				d.queueWorkers[s.bufIndex].Finish()
-
 				err = d.searchKernel.SetArg(1, d.headerBuf)
 				if err != nil {
 					d.logger.Error("Error in seal clSetKernelArg 1", "error", err.Error())
@@ -946,13 +944,13 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 			}
 			d.Unlock()
 
-			_, err = d.queueWorkers[s.bufIndex].EnqueueReadBuffer(d.searchBuffers[s.bufIndex], true, uint64(unsafe.Offsetof(results.count)), 3*sizeOfUint32, unsafe.Pointer(&results.count), nil)
+			_, err = d.queueWorkers[s.bufIndex].EnqueueReadBuffer(d.searchBuffers[s.bufIndex], true, uint64(unsafe.Offsetof(results.count)), 2*sizeOfUint32, unsafe.Pointer(&results.count), nil)
 			if err != nil {
 				d.logger.Error("Error read in seal searchBuffer count", "error", err.Error())
 				continue
 			}
 
-			if results.count > 0 && results.abort < 255 {
+			if results.count > 0 {
 				if results.count > maxSearchResults+1 {
 					results.count = maxSearchResults + 1
 				}
@@ -1106,12 +1104,12 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 				}
 
 				d.Lock()
-				cancel := uint32(255)
+				one := uint32(1)
 				for _, s := range workers {
 					s.workChanged = true
 
 					d.queue.EnqueueWriteBuffer(
-						d.searchBuffers[s.bufIndex], true, uint64(unsafe.Offsetof(searchResults{}.abort)), sizeOfUint32, unsafe.Pointer(&cancel), nil)
+						d.searchBuffers[s.bufIndex], false, uint64(unsafe.Offsetof(searchResults{}.abort)), sizeOfUint32, unsafe.Pointer(&one), nil)
 
 					err = d.searchKernel.SetArg(0, d.searchBuffers[s.bufIndex])
 					if err != nil {
