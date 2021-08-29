@@ -979,7 +979,7 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 				continue
 			}
 
-			if results.count > 0 {
+			if results.count > 0 && !s.workChanged {
 				if results.count > maxSearchResults+1 {
 					results.count = maxSearchResults + 1
 				}
