@@ -1077,20 +1077,22 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 		go worker(s)
 	}
 
+	abort := uint32(1)
+
 	for {
 		select {
 		case <-stop:
 			c.stop = true
-			for _, q := range d.queueWorkers {
-				err = q.Finish()
-				if err != nil {
-					d.logger.Error("Error in seal clFinish", "error", err.Error())
-				}
+
+			for _, s := range workers {
+				d.queue.EnqueueWriteBuffer(d.searchBuffers[s.bufIndex], true, uint64(unsafe.Offsetof(searchResults{}.abort)), sizeOfUint32, unsafe.Pointer(&abort), nil)
+				d.searchKernel[s.bufIndex].SetArg(0, d.searchBuffers[s.bufIndex])
+				d.queueWorkers[s.bufIndex].Finish()
 			}
 
 			searchGroup.Wait()
 
-			return err
+			return nil
 
 		case <-c.workCh:
 			c.Lock()
@@ -1108,17 +1110,15 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 				headerHash = c.Work.HeaderHash
 
 				d.Lock()
-				one := uint32(1)
 				for _, s := range workers {
 					s.workChanged = true
 
 					d.queue.EnqueueWriteBuffer(
-						d.searchBuffers[s.bufIndex], true, uint64(unsafe.Offsetof(searchResults{}.abort)), sizeOfUint32, unsafe.Pointer(&one), nil)
+						d.searchBuffers[s.bufIndex], true, uint64(unsafe.Offsetof(searchResults{}.abort)), sizeOfUint32, unsafe.Pointer(&abort), nil)
 
 					err = d.searchKernel[s.bufIndex].SetArg(0, d.searchBuffers[s.bufIndex])
 					if err != nil {
 						d.logger.Error("Error in seal clSetKernelArg 0", "error", err.Error())
-						goto done
 					}
 				}
 				d.Unlock()
@@ -1126,20 +1126,6 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 			c.Unlock()
 		}
 	}
-
-done:
-	c.stop = true
-
-	for _, q := range d.queueWorkers {
-		err = q.Finish()
-		if err != nil {
-			d.logger.Error("Error in seal clFinish", "error", err.Error())
-		}
-	}
-
-	searchGroup.Wait()
-
-	return err
 }
 
 // WorkChanged function
