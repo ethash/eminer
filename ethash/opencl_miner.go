@@ -886,6 +886,20 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 
 			d.Lock()
 			if s.workChanged {
+				_, err = d.queueWorkers[s.bufIndex].EnqueueWriteBuffer(d.headerBuf, true, 0, 32, unsafe.Pointer(&s.headerHash[0]), nil)
+				if err != nil {
+					d.logger.Error("Error in seal clEnqueueWriterBuffer", "error", err.Error())
+					d.Unlock()
+					continue
+				}
+
+				err = d.searchKernel.SetArg(1, d.headerBuf)
+				if err != nil {
+					d.logger.Error("Error in seal clSetKernelArg 1", "error", err.Error())
+					d.Unlock()
+					continue
+				}
+
 				if extraNonce > 0 {
 					s.startNonce = extraNonce + (uint64(idx*searchBufSize+int(s.bufIndex)) << (64 - 4 - uint64(c.Work.SizeBits)))
 				} else {
@@ -1077,27 +1091,6 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 
 			if !bytes.Equal(headerHash.Bytes(), c.Work.HeaderHash.Bytes()) {
 				headerHash = c.Work.HeaderHash
-
-				_, err = d.queue.EnqueueWriteBuffer(d.headerBuf, false, 0, 32, unsafe.Pointer(&headerHash[0]), nil)
-				if err != nil {
-					d.logger.Error("Error in seal clEnqueueWriterBuffer", "error", err.Error())
-					c.Unlock()
-					goto done
-				}
-
-				err = d.queue.Finish()
-				if err != nil {
-					d.logger.Error("Error in seal clFinish", "error", err.Error())
-					c.Unlock()
-					goto done
-				}
-
-				err = d.searchKernel.SetArg(1, d.headerBuf)
-				if err != nil {
-					d.logger.Error("Error in seal clSetKernelArg 1", "error", err.Error())
-					c.Unlock()
-					goto done
-				}
 
 				//Some pools doesn't accept solutions with old work like nicehash
 				if target256.Cmp(c.Work.Target256) != 0 {
