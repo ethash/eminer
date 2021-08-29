@@ -890,13 +890,12 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 		s.workChanged = true
 
 		for !c.stop {
-			c.RLock()
+			d.Lock()
+
 			s.headerHash.SetBytes(headerHash[:])
-			c.RUnlock()
 
 			var results searchResults
 
-			d.Lock()
 			if s.workChanged {
 				_, err = d.queueWorkers[s.bufIndex].EnqueueWriteBuffer(d.headerBuf, false, 0, 32, unsafe.Pointer(&s.headerHash[0]), nil)
 				if err != nil {
@@ -969,6 +968,7 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 				d.Unlock()
 				continue
 			}
+
 			d.Unlock()
 
 			d.queueWorkers[s.bufIndex].Finish()
@@ -1110,9 +1110,8 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 			}
 
 			if !bytes.Equal(headerHash.Bytes(), c.Work.HeaderHash.Bytes()) {
-				headerHash = c.Work.HeaderHash
-
 				d.Lock()
+				headerHash = c.Work.HeaderHash
 				for _, s := range workers {
 					s.workChanged = true
 
