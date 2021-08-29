@@ -365,10 +365,6 @@ func (c *OpenCLMiner) initCLDevice(idx, deviceID int, device *cl.Device) error {
 	workGroupSize = uint64(intensity * 8)
 	globalWorkSize = uint64(math.Exp2(float64(intensity)/division)*float64(workGroupSize)) * factor
 
-	if amdGPU {
-		globalWorkSize = workGroupSize * 32768
-	}
-
 	logger.Trace("Intensity", "intensity", intensity, "global", globalWorkSize, "local", workGroupSize, "bufsize", searchBufSize)
 
 	if workGroupSize > maxWorkGroupSize {
