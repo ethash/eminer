@@ -316,16 +316,16 @@ __kernel void search(
 		state[i] = 0;
 	}
 
+	state[12] = 0x0000000000000001UL;
+	state[16] = 0x8000000000000000UL;
+
+	keccak_f1600(state, 1);
+
 	uint2 mixhash[4];
 	mixhash[0] = state[8];
 	mixhash[1] = state[9];
 	mixhash[2] = state[10];
 	mixhash[3] = state[11];
-
-	state[12] = 0x0000000000000001UL;
-	state[16] = 0x8000000000000000UL;
-
-	keccak_f1600(state, 1);
 
 #ifdef FAST_EXIT
 	if (get_local_id(0) == 0) {
