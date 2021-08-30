@@ -493,7 +493,7 @@ __kernel void generate_dag_item(uint start, __global const uint16 *_Cache, __glo
     dagNode[thread_id] = DAGNode;
     barrier(CLK_LOCAL_MEM_FENCE);
     for (uint i = 0; i < 256; ++i) {
-        uint ParentIdx = fnv(NodeIdx ^ i, dagNode[thread_id].dwords[i & 15]) % LIGHT_SIZE;
+        uint ParentIdx = FNV(NodeIdx ^ i, dagNode[thread_id].dwords[i & 15]) % LIGHT_SIZE;
         indexes[thread_id] = ParentIdx;
         barrier(CLK_LOCAL_MEM_FENCE);
 
@@ -501,7 +501,7 @@ __kernel void generate_dag_item(uint start, __global const uint16 *_Cache, __glo
             uint parentIndex = indexes[t];
             parentNode = Cache + parentIndex;
 
-            dagNode[t].dqwords[thread_id] = fnv(dagNode[t].dqwords[thread_id], parentNode->dqwords[thread_id]);
+            dagNode[t].dqwords[thread_id] = FNV(dagNode[t].dqwords[thread_id], parentNode->dqwords[thread_id]);
             barrier(CLK_LOCAL_MEM_FENCE);
         }
     }
