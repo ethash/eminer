@@ -1,7 +1,5 @@
 // Optimized 4 threads
 
-// #pragma OPENCL EXTENSION cl_amd_printf : enable
-
 #define OPENCL_DEVICE_AMD		0
 #define OPENCL_DEVICE_NVIDIA	1
 
@@ -213,7 +211,7 @@ typedef union {
 	uint16	uint16s[200 / sizeof(uint16)];
 } hash200_t;
 
-struct SearchResults {
+struct search_results_t {
     struct {
         uint gid;
         uint mix[8];
@@ -228,7 +226,7 @@ struct SearchResults {
 __attribute__((reqd_work_group_size(GROUP_SIZE, 1, 1)))
 #endif
 __kernel void search(
-	__global volatile struct SearchResults* restrict g_output,
+	__global volatile struct search_results_t* restrict g_output,
 	__constant hash32_t const* g_header,
 	__global hash128_t const* g_dag1,
 	__global hash128_t const* g_dag2,
@@ -236,6 +234,12 @@ __kernel void search(
 	ulong start_nonce,
 	ulong target
 	) {
+#ifdef FAST_EXIT
+	if (g_output->abort) {
+		return;
+	}
+#endif
+
 	uint const gid = get_global_id(0);
 	uint const thread_id = gid % THREADS;
 	uint const hash_id = (gid % GROUP_SIZE) >> 2;
@@ -306,7 +310,7 @@ __kernel void search(
 		state[i] = 0;
 	}
 
-    uint2 mixhash[4];
+	uint2 mixhash[4];
 	mixhash[0] = state[8];
 	mixhash[1] = state[9];
 	mixhash[2] = state[10];
@@ -317,18 +321,26 @@ __kernel void search(
 
 	keccak_f1600(state, 1);
 
+#ifdef FAST_EXIT
+	if (get_local_id(0) == 0) {
+		atomic_inc(&g_output->hashCount);
+	}
+#endif
+
 	if (SWAP64(state[0]) <= target) {
+#ifdef FAST_EXIT
+		atomic_inc(&g_output->abort);
+#endif
 		uint slot = min((uint)MAX_OUTPUTS, atomic_inc(&g_output->count));
-		// printf("Nonce: %i Slot: %i Gid: %i\n", start_nonce, slot, gid);
-        g_output->rslt[slot].gid = gid;
-        g_output->rslt[slot].mix[0] = mixhash[0].s0;
-        g_output->rslt[slot].mix[1] = mixhash[0].s1;
-        g_output->rslt[slot].mix[2] = mixhash[1].s0;
-        g_output->rslt[slot].mix[3] = mixhash[1].s1;
-        g_output->rslt[slot].mix[4] = mixhash[2].s0;
-        g_output->rslt[slot].mix[5] = mixhash[2].s1;
-        g_output->rslt[slot].mix[6] = mixhash[3].s0;
-        g_output->rslt[slot].mix[7] = mixhash[3].s1;
+		g_output->rslt[slot].gid = gid;
+		g_output->rslt[slot].mix[0] = mixhash[0].s0;
+		g_output->rslt[slot].mix[1] = mixhash[0].s1;
+		g_output->rslt[slot].mix[2] = mixhash[1].s0;
+		g_output->rslt[slot].mix[3] = mixhash[1].s1;
+		g_output->rslt[slot].mix[4] = mixhash[2].s0;
+		g_output->rslt[slot].mix[5] = mixhash[2].s1;
+		g_output->rslt[slot].mix[6] = mixhash[3].s0;
+		g_output->rslt[slot].mix[7] = mixhash[3].s1;
 	}
 }
 
