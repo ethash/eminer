@@ -150,7 +150,7 @@ const (
 	amdIntensity    = 16
 	nvidiaIntensity = 8
 
-	defaultSearchBufSize = 4
+	defaultSearchBufSize = 8
 )
 
 var searchBufSize int
