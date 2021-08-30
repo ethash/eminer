@@ -17,7 +17,7 @@
 
 #define NODE_SIZE (64 / 4)
 
-#define FNV_PRIME0x01000193
+#define FNV_PRIME 0x01000193
 
 #define FNV(x, y) ((x)*FNV_PRIME ^ (y))
 #define FNV_REDUCE(v) FNV(FNV(FNV(v.x, v.y), v.z), v.w)
