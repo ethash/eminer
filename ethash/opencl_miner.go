@@ -633,35 +633,15 @@ func (c *OpenCLMiner) generateDAGOnDevice(d *OpenCLDevice) error {
 
 	d.logger.Info("Requiring new DAG on device", "epoch", blockNum/epochLength)
 
-	now := time.Now().UnixNano()
+	start := time.Now().UnixNano()
 
-	chunk := uint64(10000 * dagWorkGroupSize)
-	start := uint64(0)
-	for start = 0; start <= work-chunk; start += chunk {
-		dagKernel.SetArg(0, uint32(start))
-		d.queue.EnqueueNDRangeKernel(dagKernel,
-			[]int{0},
-			[]int{int(chunk)},
-			[]int{int(dagWorkGroupSize)}, nil)
-		d.queue.Finish()
-	}
-	if start < work {
-		groupsLeft := work - start
-		dagKernel.SetArg(0, uint32(start))
-		d.queue.EnqueueNDRangeKernel(dagKernel,
-			[]int{0},
-			[]int{int(groupsLeft * dagWorkGroupSize)},
-			[]int{int(dagWorkGroupSize)}, nil)
-		d.queue.Finish()
-	}
-	/* for i := uint64(0); i < fullRuns; i++ {
+	for i := uint64(0); i < fullRuns; i++ {
 		err = dagKernel.SetArg(0, uint32(i*dagGlobalWorkSize))
 		if err != nil {
 			return fmt.Errorf("set arg failed %v", err)
 		}
 
-		var event *cl.Event
-		event, err = d.queue.EnqueueNDRangeKernel(dagKernel,
+		_, err = d.queue.EnqueueNDRangeKernel(dagKernel,
 			[]int{0},
 			[]int{int(dagGlobalWorkSize)},
 			[]int{int(dagWorkGroupSize)}, nil)
@@ -669,22 +649,14 @@ func (c *OpenCLMiner) generateDAGOnDevice(d *OpenCLDevice) error {
 			return fmt.Errorf("enqueue dag kernel failed %v", err)
 		}
 
-		err = d.queue.Flush()
-		if err != nil {
-			return fmt.Errorf("clFlush dag queue failed %v", err)
-		}
-
-		err = cl.WaitForEvents([]*cl.Event{event})
-		if err != nil {
-			return fmt.Errorf("error in dag wait events %v", err)
-		}
+		d.queue.Finish()
 
 		elapsed := time.Now().UnixNano() - start
 		d.logger.Debug("Generating DAG in progress", "epoch", blockNum/epochLength,
 			"percentage", int(100*float64(i+1)/float64(fullRuns)), "elapsed", common.PrettyDuration(elapsed))
-	} */
+	}
 
-	elapsed := time.Now().UnixNano() - now
+	elapsed := time.Now().UnixNano() - start
 	d.logger.Info("Generated DAG on device", "epoch", blockNum/epochLength, "elapsed", common.PrettyDuration(elapsed))
 
 	cacheBuf.Release()
