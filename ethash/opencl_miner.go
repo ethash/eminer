@@ -843,23 +843,9 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 			s.headerHash.SetBytes(headerHash[:])
 
 			if s.workChanged {
-				_, err := d.queueWorkers[s.bufIndex].EnqueueWriteBuffer(d.headerBuf, false, 0, 32, unsafe.Pointer(&s.headerHash[0]), nil)
+				_, err := d.queueWorkers[s.bufIndex].EnqueueWriteBuffer(d.headerBuf, true, 0, 32, unsafe.Pointer(&s.headerHash[0]), nil)
 				if err != nil {
 					d.logger.Error("Error in seal clEnqueueWriterBuffer", "error", err.Error())
-					d.Unlock()
-					continue
-				}
-
-				_, err = d.queueWorkers[s.bufIndex].EnqueueWriteBuffer(d.searchBuffers[s.bufIndex], false, uint64(unsafe.Offsetof(results.count)), 3*sizeOfUint32, unsafe.Pointer(&zero[0]), nil)
-				if err != nil {
-					d.logger.Error("Error write in seal clear buffers", "error", err.Error())
-					d.Unlock()
-					continue
-				}
-
-				err = d.searchKernel[s.bufIndex].SetArg(0, d.searchBuffers[s.bufIndex])
-				if err != nil {
-					d.logger.Error("Error in seal clSetKernelArg 0", "error", err.Error())
 					d.Unlock()
 					continue
 				}
@@ -910,7 +896,21 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 				d.logger.Debug("Work changed on GPU", "worker", s.bufIndex, "hash", s.headerHash.TerminalString())
 			}
 
-			err := d.searchKernel[s.bufIndex].SetArg(5, s.startNonce)
+			_, err := d.queueWorkers[s.bufIndex].EnqueueWriteBuffer(d.searchBuffers[s.bufIndex], true, uint64(unsafe.Offsetof(results.count)), 3*sizeOfUint32, unsafe.Pointer(&zero[0]), nil)
+			if err != nil {
+				d.logger.Error("Error write in seal clear buffers", "error", err.Error())
+				d.Unlock()
+				continue
+			}
+
+			err = d.searchKernel[s.bufIndex].SetArg(0, d.searchBuffers[s.bufIndex])
+			if err != nil {
+				d.logger.Error("Error in seal clSetKernelArg 0", "error", err.Error())
+				d.Unlock()
+				continue
+			}
+
+			err = d.searchKernel[s.bufIndex].SetArg(5, s.startNonce)
 			if err != nil {
 				d.logger.Error("Error in seal clSetKernelArg 5", "error", err.Error())
 				d.Unlock()
