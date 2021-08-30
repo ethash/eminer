@@ -1,6 +1,6 @@
 // Optimized 4 threads
 
-#define OPENCL_DEVICE_AMD		0
+#define OPENCL_DEVICE_AMD	0
 #define OPENCL_DEVICE_NVIDIA	1
 
 #define OPENCL_DEVICE DEVICE_VENDOR
@@ -17,15 +17,15 @@
 
 #define NODE_SIZE (64/4)
 
-#define FNV_PRIME	0x01000193
+#define FNV_PRIME0x01000193
 
-#define FNV(x, y)        ((x) * FNV_PRIME ^ (y))
-#define FNV_REDUCE(v)    FNV(FNV(FNV(v.x, v.y), v.z), v.w)
+#define FNV(x, y) ((x) * FNV_PRIME ^ (y))
+#define FNV_REDUCE(v) FNV(FNV(FNV(v.x, v.y), v.z), v.w)
 
 #define ROTL64_1(x, y) as_ulong(rotate(as_ulong(x), (ulong)(y)))
 #define ROTL64_2(x, y) ROTL64_1(x, (y) + 32)
 
-#define SWAP64(x)   (as_ulong(as_uchar8(x).s76543210))
+#define SWAP64(x) (as_ulong(as_uchar8(x).s76543210))
 
 #define SHA3_512(s) for (uint i = 8; i != 25; ++i) { s[i] = 0UL;  } s[8] = 0x8000000000000001UL; keccak_f1600(s, 8)
 
@@ -215,7 +215,7 @@ struct search_results_t {
     struct {
         uint gid;
         uint mix[8];
-        uint pad[7]; // pad to 16 words for easy indexing
+        uint pad[7];
     } rslt[MAX_OUTPUTS+1];
     uint count;
     uint hashCount;
