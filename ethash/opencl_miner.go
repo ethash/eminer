@@ -773,7 +773,7 @@ func (c *OpenCLMiner) CmpDagSize(work *Work) bool {
 }
 
 // Seal hashes on GPU
-func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound func(bool, uint64, []byte, uint64)) error {
+func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound func(common.Hash, uint64, []byte, uint64)) error {
 
 	//may stop requested
 	time.Sleep(1 * time.Millisecond)
@@ -1000,7 +1000,7 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 									roundVariance = roundCount * 100 / c.Work.Difficulty().Uint64()
 								}
 
-								go onSolutionFound(true, checkNonce, mixDigest, roundVariance)
+								go onSolutionFound(hh, checkNonce, mixDigest, roundVariance)
 
 								d.roundCount.Empty()
 
