@@ -1,6 +1,6 @@
 // Optimized 4 threads
 
-&#pragma OPENCL EXTENSION cl_amd_printf : enable
+#pragma OPENCL EXTENSION cl_amd_printf : enable
 
 #define OPENCL_DEVICE_AMD		0
 #define OPENCL_DEVICE_NVIDIA	1
