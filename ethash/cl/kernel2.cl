@@ -226,7 +226,7 @@ struct search_results_t {
 __attribute__((reqd_work_group_size(GROUP_SIZE, 1, 1)))
 #endif
 __kernel void search(
-	__global volatile uint* restrict g_output,
+	__global volatile search_results_t* restrict g_output,
 	__constant hash32_t const* g_header,
 	__global hash128_t const* g_dag1,
 	__global hash128_t const* g_dag2,
