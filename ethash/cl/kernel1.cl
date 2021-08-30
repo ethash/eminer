@@ -336,6 +336,7 @@ __kernel void generate_dag_item(uint start, __global hash64_t const* g_light,
 	__global hash64_t * g_dag1, __global hash64_t * g_dag2) {
 
 	uint node_id = start + get_global_id(0);
+	__global hash64_t * g_dag;
 	hash200_t dag_node;
 
 	dag_node.uint16s[0] = g_light[node_id % LIGHT_SIZE].data;
@@ -350,15 +351,14 @@ __kernel void generate_dag_item(uint start, __global hash64_t const* g_light,
 	}
 
 	SHA3_512(dag_node.ulongs);
+	
+	g_dag = g_dag1;
 
-	__global hash64_t * g_dag;
 	if (node_id & 2) {
 		g_dag = g_dag2;
-	} else {
-		g_dag = g_dag1;
 	}
 
 	node_id &= ~2;
 
-	g_dag[(node_id / 2) | (node_id & 1)].data = dag_node.uint16s[0];
+	g_dag[node_id % 2].data = dag_node.uint16s[0];
 }
