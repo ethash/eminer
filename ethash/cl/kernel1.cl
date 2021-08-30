@@ -1,6 +1,6 @@
 // Optimized 4 threads
 
-// #pragma OPENCL EXTENSION cl_amd_printf : enable
+&#pragma OPENCL EXTENSION cl_amd_printf : enable
 
 #define OPENCL_DEVICE_AMD		0
 #define OPENCL_DEVICE_NVIDIA	1
@@ -358,7 +358,12 @@ __kernel void generate_dag_item(uint start, __global hash64_t const* g_light,
 		g_dag = g_dag2;
 	}
 
+	uint test = node_id;
+	test &= ~2;
+
+	printf("%i %i %i %i\n", node_id, node_id & 2, test, (test / 2) | (test & 1));
+
 	node_id &= ~2;
 
-	g_dag[node_id % 2].data = dag_node.uint16s[0];
+	g_dag[(node_id / 2) | (node_id & 1)].data = dag_node.uint16s[0];
 }
