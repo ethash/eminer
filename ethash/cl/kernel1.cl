@@ -354,11 +354,9 @@ __kernel void generate_dag_item(uint start, __global hash64_t const* g_light,
 	
 	g_dag = g_dag1;
 
-	if (node_id & 2) {
+	if (node_id & 1) {
 		g_dag = g_dag2;
 	}
 
-	node_id &= ~2;
-
-	g_dag[(node_id / 2) | (node_id & 1)].data = dag_node.uint16s[0];
+	g_dag[node_id >> 1].data = dag_node.uint16s[0];
 }
