@@ -299,10 +299,10 @@ search(__global volatile struct search_results_t *restrict g_output,
 
     if (tid == thread_id) {
       ((ulong4 *)state)[2] = share->ulong4s[0];
-      ((ulong4 *)state)[8] = share->ulong4s[0];
-      ((ulong4 *)state)[9] = share->ulong4s[1];
-      ((ulong4 *)state)[10] = share->ulong4s[2];
-      ((ulong4 *)state)[11] = share->ulong4s[3];
+      ((uint2 *)state)[8] = share->uint2s[0];
+      ((uint2 *)state)[9] = share->uint2s[1];
+      ((uint2 *)state)[10] = share->uint2s[2];
+      ((uint2 *)state)[11] = share->uint2s[3];
     }
     barrier(CLK_LOCAL_MEM_FENCE);
   }
