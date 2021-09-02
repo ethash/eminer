@@ -101,6 +101,8 @@ type OpenCLMiner struct {
 
 	stop bool
 
+	binary bool
+
 	SolutionsHashRate metrics.Meter
 	FoundSolutions    metrics.Histogram
 	RejectedSolutions metrics.Counter
@@ -162,7 +164,7 @@ var kernels = []*kernel{
 }
 
 //NewCL func
-func NewCL(deviceIds []int, workerName, version string) *OpenCLMiner {
+func NewCL(deviceIds []int, workerName string, binary bool, version string) *OpenCLMiner {
 	ids := make([]int, len(deviceIds))
 	copy(ids, deviceIds)
 
@@ -175,6 +177,7 @@ func NewCL(deviceIds []int, workerName, version string) *OpenCLMiner {
 		RejectedSolutions: metrics.NewCounter(),
 		InvalidSolutions:  metrics.NewCounter(),
 		dagIntensity:      8,
+		binary:            binary,
 		workCh:            make(chan struct{}),
 		version:           version,
 		uptime:            time.Now(),
@@ -445,15 +448,22 @@ func (c *OpenCLMiner) initCLDevice(idx, deviceID int, device *cl.Device) error {
 		return err
 	}
 
-	err = c.createBinaryProgramOnDevice(d, workGroupSize)
-	if err != nil {
-		return err
+	if c.binary && amdGPU {
+		err = c.createBinaryProgramOnDevice(d, workGroupSize)
+		if err != nil {
+			//try source kernel
+			c.binary = false
+			err = c.createSourceProgramOnDevice(d)
+			if err != nil {
+				return err
+			}
+		}
+	} else {
+		err = c.createSourceProgramOnDevice(d)
+		if err != nil {
+			return err
+		}
 	}
-
-	/* err = c.createSourceProgramOnDevice(d)
-	if err != nil {
-		return err
-	} */
 
 	err = c.generateDAGOnDevice(d)
 	if err != nil {
@@ -688,15 +698,17 @@ func (c *OpenCLMiner) ChangeDAGOnAllDevices() (err error) {
 			return
 		}
 
-		err = c.createBinaryProgramOnDevice(d, d.workGroupSize)
-		if err != nil {
-			return
+		if c.binary && d.amdGPU {
+			err = c.createBinaryProgramOnDevice(d, d.workGroupSize)
+			if err != nil {
+				return
+			}
+		} else {
+			err = c.createSourceProgramOnDevice(d)
+			if err != nil {
+				return
+			}
 		}
-
-		/* err = c.createSourceProgramOnDevice(d)
-		if err != nil {
-			return
-		} */
 
 		wg.Add(1)
 		go func(d *OpenCLDevice) {

@@ -16,7 +16,7 @@ import (
 func Benchmark(stopChan chan struct{}) {
 	deviceID := *flagbenchmark
 
-	miner := ethash.NewCL([]int{int(deviceID)}, *flagworkername, version)
+	miner := ethash.NewCL([]int{int(deviceID)}, *flagworkername, *flaggcn, version)
 
 	hh := common.BytesToHash(common.FromHex(randomHash()))
 	sh := common.BytesToHash(common.FromHex("0x0000000000000000000000000000000000000000000000000000000000000000"))

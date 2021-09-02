@@ -35,6 +35,7 @@ var (
 	flagcpus         = flag.Int("cpu", 0, "Set the maximum number of CPUs to use")
 	flaghttp         = flag.String("http", ":8550", "HTTP server for monitoring (read-only) for disable set \"no\"")
 	flagfixediff     = flag.Bool("fixed-diff", false, "Fixed diff for works, round solutions")
+	flaggcn          = flag.Bool("gcn", false, "Activate binary kernel (amd devices only)")
 	flagfan          = flag.String("fan-percent", "", "Set fan speed percent on selected devices, use comma for multiple devices (amd devices only)")
 	flagstathat      = flag.String("stathat", "", "Set your stathat email address here to have some basic metrics from stathat.com web site")
 	flagnocolor      = flag.Bool("no-output-color", false, "Disable colorized output log format")
