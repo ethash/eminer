@@ -299,12 +299,6 @@ search(__global volatile struct search_results_t *restrict g_output,
     barrier(CLK_LOCAL_MEM_FENCE);
   }
 
-  uint2 mixhash[4];
-  mixhash[0] = state[8];
-  mixhash[1] = state[9];
-  mixhash[2] = state[10];
-  mixhash[3] = state[11];
-
   for (uint i = 13; i != 25; ++i) {
     state[i] = 0;
   }
@@ -313,6 +307,12 @@ search(__global volatile struct search_results_t *restrict g_output,
   state[16] = 0x8000000000000000UL;
 
   keccak_f1600(state, 1);
+
+  uint2 mixhash[4];
+  mixhash[0] = state[8];
+  mixhash[1] = state[9];
+  mixhash[2] = state[10];
+  mixhash[3] = state[11];
 
 #ifdef FAST_EXIT
   if (get_local_id(0) == 0) {
