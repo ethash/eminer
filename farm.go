@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
@@ -105,8 +106,6 @@ func Farm(stopChan <-chan struct{}) {
 	miner.Lock()
 	miner.Work = w
 	miner.Unlock()
-
-	miner.SetDAGIntensity(*flagdagintensity)
 
 	if *flagkernel != "" {
 		miner.SetKernel(argToIntSlice(*flagkernel))

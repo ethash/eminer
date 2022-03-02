@@ -52,8 +52,6 @@ func Stratum(stopChan <-chan struct{}) {
 	miner.Work = w
 	miner.Unlock()
 
-	miner.SetDAGIntensity(*flagdagintensity)
-
 	if *flagkernel != "" {
 		miner.SetKernel(argToIntSlice(*flagkernel))
 	}

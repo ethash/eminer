@@ -1,7 +1,7 @@
 all: cl.go gcn.go
 
 cl.go:
-	go-bindata -o cl -split -pkg cl cl/kernel1.cl cl/kernel2.cl cl/kernel3.cl
+	go-bindata -o cl -split -pkg cl cl/kernel1.cl
 
 gcn.go:
 	go-bindata -o gcn -split 	-pkg gcn gcn/bin/*

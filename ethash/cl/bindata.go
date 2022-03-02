@@ -142,8 +142,6 @@ func AssetNames() []string {
 //
 var _bindata = map[string]func() (*asset, error){
 	"cl/kernel1.cl": bindataClKernel1Cl,
-	"cl/kernel2.cl": bindataClKernel2Cl,
-	"cl/kernel3.cl": bindataClKernel3Cl,
 }
 
 //
@@ -200,8 +198,6 @@ type bintree struct {
 var _bintree = &bintree{Func: nil, Children: map[string]*bintree{
 	"cl": {Func: nil, Children: map[string]*bintree{
 		"kernel1.cl": {Func: bindataClKernel1Cl, Children: map[string]*bintree{}},
-		"kernel2.cl": {Func: bindataClKernel2Cl, Children: map[string]*bintree{}},
-		"kernel3.cl": {Func: bindataClKernel3Cl, Children: map[string]*bintree{}},
 	}},
 }}
 

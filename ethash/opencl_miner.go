@@ -11,7 +11,6 @@ import (
 	"math"
 	"math/big"
 	mrand "math/rand"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -60,9 +59,9 @@ type OpenCLDevice struct {
 	queue        *cl.CommandQueue
 	queueWorkers []*cl.CommandQueue
 
-	ctx        *cl.Context
-	program    *cl.Program
-	dagProgram *cl.Program
+	ctx           *cl.Context
+	program       *cl.Program
+	binaryProgram *cl.Program
 
 	nonceRand *mrand.Rand // seeded by crypto/rand, see comments where it's initialised
 
@@ -99,16 +98,14 @@ type OpenCLMiner struct {
 
 	workerName string
 
-	stop bool
-
 	binary bool
+
+	stop bool
 
 	SolutionsHashRate metrics.Meter
 	FoundSolutions    metrics.Histogram
 	RejectedSolutions metrics.Counter
 	InvalidSolutions  metrics.Counter
-
-	dagIntensity int
 
 	workCh chan struct{}
 
@@ -131,7 +128,7 @@ type kernel struct {
 }
 
 type searchResults struct {
-	rslt [maxSearchResults + 1]struct {
+	rslt [maxSearchResults]struct {
 		gid uint32
 		mix [8]uint32
 		pad [7]uint32
@@ -145,22 +142,20 @@ const (
 	sizeOfUint32 = 4
 	sizeOfNode   = 64
 
-	maxSearchResults = 3
+	maxSearchResults = 4
 
 	maxWorkGroupSize = 256
 
 	amdIntensity    = 16
 	nvidiaIntensity = 8
 
-	defaultSearchBufSize = 8
+	defaultSearchBufSize = 4
 )
 
 var searchBufSize int
 
 var kernels = []*kernel{
-	{id: 1, source: kernelSource("kernel1.cl"), threadCount: 4},
-	{id: 2, source: kernelSource("kernel2.cl"), threadCount: 8},
-	{id: 3, source: kernelSource("kernel3.cl"), threadCount: 2},
+	{id: 1, source: kernelSource("kernel1.cl"), threadCount: 8},
 }
 
 //NewCL func
@@ -176,7 +171,6 @@ func NewCL(deviceIds []int, workerName string, binary bool, version string) *Ope
 		FoundSolutions:    metrics.NewHistogram(metrics.NewUniformSample(1e4)),
 		RejectedSolutions: metrics.NewCounter(),
 		InvalidSolutions:  metrics.NewCounter(),
-		dagIntensity:      8,
 		binary:            binary,
 		workCh:            make(chan struct{}),
 		version:           version,
@@ -317,16 +311,9 @@ func (c *OpenCLMiner) initCLDevice(idx, deviceID int, device *cl.Device) error {
 		name = device.Name()
 	}
 
-	kernel := kernels[2] //2T kernel
+	kernel := kernels[0]
 
-	if nvidiaGPU {
-		kernel = kernels[0] //4T kernel
-	}
-
-	if strings.Contains(device.Name(), "1080") {
-		kernel = kernels[1] //8T kernel
-	}
-
+	// if there is more kernel
 	if idx < len(c.kernels) {
 		if c.kernels[idx] > 0 && c.kernels[idx] < 4 {
 			kernel = kernels[c.kernels[idx]-1]
@@ -443,25 +430,18 @@ func (c *OpenCLMiner) initCLDevice(idx, deviceID int, device *cl.Device) error {
 	metrics.Register(fmt.Sprintf("%s.gpu.%d.memoryclock", c.workerName, deviceID), d.memoryclock)
 	metrics.Register(fmt.Sprintf("%s.gpu.%d.engineclock", c.workerName, deviceID), d.engineclock)
 
-	err = c.createDagProgramOnDevice(d)
+	err = c.createProgramOnDevice(d)
 	if err != nil {
 		return err
 	}
+
+	d.logger.Info("Created program on device")
 
 	if c.binary && amdGPU {
 		err = c.createBinaryProgramOnDevice(d, workGroupSize)
 		if err != nil {
 			//try source kernel
 			c.binary = false
-			err = c.createSourceProgramOnDevice(d)
-			if err != nil {
-				return err
-			}
-		}
-	} else {
-		err = c.createSourceProgramOnDevice(d)
-		if err != nil {
-			return err
 		}
 	}
 
@@ -483,20 +463,20 @@ func (c *OpenCLMiner) createBinaryProgramOnDevice(d *OpenCLDevice, workGroupSize
 		return err
 	}
 
-	d.program, err = d.ctx.CreateProgramWithBinary(data, d.device)
+	d.binaryProgram, err = d.ctx.CreateProgramWithBinary(data, d.device)
 	if err != nil {
 		return fmt.Errorf("program err: %v", err)
 	}
 
 	buildOpts := "-D FAST_EXIT=1"
-	err = d.program.BuildProgram([]*cl.Device{d.device}, buildOpts)
+	err = d.binaryProgram.BuildProgram([]*cl.Device{d.device}, buildOpts)
 	if err != nil {
 		return fmt.Errorf("program build err: %v", err)
 	}
 
 	d.searchKernel = make([]*cl.Kernel, searchBufSize)
 	for i := 0; i < searchBufSize; i++ {
-		d.searchKernel[i], err = d.program.CreateKernel("search")
+		d.searchKernel[i], err = d.binaryProgram.CreateKernel("search")
 		if err != nil {
 			return err
 		}
@@ -505,28 +485,32 @@ func (c *OpenCLMiner) createBinaryProgramOnDevice(d *OpenCLDevice, workGroupSize
 	return nil
 }
 
-func (c *OpenCLMiner) createSourceProgramOnDevice(d *OpenCLDevice) (err error) {
+func (c *OpenCLMiner) createProgramOnDevice(d *OpenCLDevice) (err error) {
 	deviceVendor := 0
-	if d.nvidiaGPU {
+
+	if d.amdGPU {
 		deviceVendor = 1
 	}
 
-	kvs := make(map[string]string)
-	kvs["GROUP_SIZE"] = strconv.FormatUint(d.workGroupSize, 10)
-	kvs["DEVICE_VENDOR"] = strconv.Itoa(deviceVendor)
-	kvs["ACCESSES"] = strconv.FormatUint(loopAccesses, 10)
-	kvs["MAX_OUTPUTS"] = strconv.FormatUint(maxSearchResults, 10)
-	kvs["HASH_SIZE"] = strconv.FormatUint(d.workGroupSize/d.kernel.threadCount, 10)
-	kvs["THREADS"] = strconv.FormatUint(d.kernel.threadCount, 10)
-	kernelCode := replaceWords(d.kernel.source, kvs)
+	if d.nvidiaGPU {
+		deviceVendor = 3
+	}
 
-	d.program, err = d.ctx.CreateProgramWithSource([]string{kernelCode})
+	kvs := make(map[string]uint64)
+	kvs["WORKSIZE"] = d.workGroupSize
+	kvs["PLATFORM"] = uint64(deviceVendor)
+	kvs["ACCESSES"] = uint64(loopAccesses)
+	kvs["MAX_OUTPUTS"] = uint64(maxSearchResults)
+	kvs["DAG_SIZE"] = c.dagSize / mixBytes
+	kvs["LIGHT_SIZE"] = c.cacheSize / sizeOfNode
+	kvs["FAST_EXIT"] = 1
+
+	d.program, err = d.ctx.CreateProgramWithSource([]string{createDefinations(kvs) + d.kernel.source})
 	if err != nil {
 		return fmt.Errorf("program err: %v", err)
 	}
 
-	buildOpts := fmt.Sprintf("-D DAG_SIZE=%d -D LIGHT_SIZE=%d -D FAST_EXIT=1", c.dagSize/mixBytes, c.cacheSize/sizeOfNode)
-	err = d.program.BuildProgram([]*cl.Device{d.device}, buildOpts)
+	err = d.program.BuildProgram([]*cl.Device{d.device}, "")
 	if err != nil {
 		return fmt.Errorf("program build err: %v", err)
 	}
@@ -537,35 +521,6 @@ func (c *OpenCLMiner) createSourceProgramOnDevice(d *OpenCLDevice) (err error) {
 		if err != nil {
 			return err
 		}
-	}
-
-	return nil
-}
-
-func (c *OpenCLMiner) createDagProgramOnDevice(d *OpenCLDevice) (err error) {
-	deviceVendor := 0
-	if d.nvidiaGPU {
-		deviceVendor = 1
-	}
-
-	kvs := make(map[string]string)
-	kvs["GROUP_SIZE"] = strconv.FormatUint(d.workGroupSize, 10)
-	kvs["DEVICE_VENDOR"] = strconv.Itoa(deviceVendor)
-	kvs["ACCESSES"] = strconv.FormatUint(loopAccesses, 10)
-	kvs["MAX_OUTPUTS"] = strconv.FormatUint(maxSearchResults, 10)
-	kvs["HASH_SIZE"] = strconv.FormatUint(d.workGroupSize/d.kernel.threadCount, 10)
-	kvs["THREADS"] = strconv.FormatUint(d.kernel.threadCount, 10)
-	kernelCode := replaceWords(d.kernel.source, kvs)
-
-	d.dagProgram, err = d.ctx.CreateProgramWithSource([]string{kernelCode})
-	if err != nil {
-		return fmt.Errorf("dagProgram err: %v", err)
-	}
-
-	buildOpts := fmt.Sprintf("-D DAG_SIZE=%d -D LIGHT_SIZE=%d", c.dagSize/mixBytes, c.cacheSize/sizeOfNode)
-	err = d.dagProgram.BuildProgram([]*cl.Device{d.device}, buildOpts)
-	if err != nil {
-		return fmt.Errorf("dagProgram build err: %v", err)
 	}
 
 	return nil
@@ -579,7 +534,7 @@ func (c *OpenCLMiner) generateDAGOnDevice(d *OpenCLDevice) error {
 
 	dagKernelFunc := "generate_dag_item"
 
-	dagKernel, err := d.dagProgram.CreateKernel(dagKernelFunc)
+	dagKernel, err := d.program.CreateKernel(dagKernelFunc)
 	if err != nil {
 		return fmt.Errorf("dagKernelName err: %v", err)
 	}
@@ -616,15 +571,7 @@ func (c *OpenCLMiner) generateDAGOnDevice(d *OpenCLDevice) error {
 		return fmt.Errorf("writing to cache buf failed: %v", err)
 	}
 
-	dagWorkGroupSize := uint64(c.dagIntensity * 8)
-	dagGlobalWorkSize := uint64(dagWorkGroupSize * 16384)
-
-	work := uint64(c.dagSize / sizeOfNode)
-	fullRuns := uint64(work / dagGlobalWorkSize)
-	restWork := uint64(work % dagGlobalWorkSize)
-	if restWork > 0 {
-		fullRuns++
-	}
+	d.queue.Finish()
 
 	err = dagKernel.SetArg(1, cacheBuf)
 	if err != nil {
@@ -643,30 +590,50 @@ func (c *OpenCLMiner) generateDAGOnDevice(d *OpenCLDevice) error {
 
 	d.logger.Info("Requiring new DAG on device", "epoch", blockNum/epochLength)
 
-	start := time.Now().UnixNano()
+	startTime := time.Now().UnixNano()
 
-	for i := uint64(0); i < fullRuns; i++ {
-		err = dagKernel.SetArg(0, uint32(i*dagGlobalWorkSize))
+	workItems := uint32(c.dagSize / mixBytes * 2)
+	start := uint32(0)
+	chunk := uint32(10000 * d.workGroupSize)
+
+	for start = 0; start <= workItems-chunk; start += chunk {
+		err = dagKernel.SetArg(0, start)
 		if err != nil {
 			return fmt.Errorf("set arg failed %v", err)
 		}
 
 		_, err = d.queue.EnqueueNDRangeKernel(dagKernel,
 			[]int{0},
-			[]int{int(dagGlobalWorkSize)},
-			[]int{int(dagWorkGroupSize)}, nil)
+			[]int{int(chunk)},
+			[]int{int(d.workGroupSize)}, nil)
 		if err != nil {
 			return fmt.Errorf("enqueue dag kernel failed %v", err)
 		}
 
 		d.queue.Finish()
-
-		elapsed := time.Now().UnixNano() - start
-		d.logger.Debug("Generating DAG in progress", "epoch", blockNum/epochLength,
-			"percentage", int(100*float64(i+1)/float64(fullRuns)), "elapsed", common.PrettyDuration(elapsed))
 	}
 
-	elapsed := time.Now().UnixNano() - start
+	if start < workItems {
+		groupsLeft := uint32(workItems - start)
+		groupsLeft = (groupsLeft + uint32(d.workGroupSize) - 1) / uint32(d.workGroupSize)
+
+		err = dagKernel.SetArg(0, start)
+		if err != nil {
+			return fmt.Errorf("set arg failed %v", err)
+		}
+
+		_, err = d.queue.EnqueueNDRangeKernel(dagKernel,
+			[]int{0},
+			[]int{int(groupsLeft * uint32(d.workGroupSize))},
+			[]int{int(d.workGroupSize)}, nil)
+		if err != nil {
+			return fmt.Errorf("enqueue dag kernel failed %v", err)
+		}
+
+		d.queue.Finish()
+	}
+
+	elapsed := time.Now().UnixNano() - startTime
 	d.logger.Info("Generated DAG on device", "epoch", blockNum/epochLength, "elapsed", common.PrettyDuration(elapsed))
 
 	cacheBuf.Release()
@@ -691,20 +658,17 @@ func (c *OpenCLMiner) ChangeDAGOnAllDevices() (err error) {
 			searchKernel.Release()
 		}
 		d.program.Release()
-		d.dagProgram.Release()
+		if c.binary {
+			d.binaryProgram.Release()
+		}
 
-		err = c.createDagProgramOnDevice(d)
+		err = c.createProgramOnDevice(d)
 		if err != nil {
 			return
 		}
 
 		if c.binary && d.amdGPU {
 			err = c.createBinaryProgramOnDevice(d, d.workGroupSize)
-			if err != nil {
-				return
-			}
-		} else {
-			err = c.createSourceProgramOnDevice(d)
 			if err != nil {
 				return
 			}
@@ -733,10 +697,12 @@ func (c *OpenCLMiner) ReleaseAll() {
 	log.Info("Releasing all OpenCL devices")
 
 	for _, d := range c.devices {
-		d.ctx.Release()
 		d.queue.Release()
 		d.program.Release()
-		d.dagProgram.Release()
+		d.ctx.Release()
+		if c.binary {
+			d.binaryProgram.Release()
+		}
 		for _, searchKernel := range d.searchKernel {
 			searchKernel.Release()
 		}
@@ -759,10 +725,12 @@ func (c *OpenCLMiner) Release(deviceID int) {
 
 	d.logger.Info("Releasing device", "name", d.name)
 
-	d.ctx.Release()
 	d.queue.Release()
 	d.program.Release()
-	d.dagProgram.Release()
+	d.ctx.Release()
+	if c.binary {
+		d.binaryProgram.Release()
+	}
 	for _, searchKernel := range d.searchKernel {
 		searchKernel.Release()
 	}
@@ -782,6 +750,21 @@ func (c *OpenCLMiner) CmpDagSize(work *Work) bool {
 	newDagSize := datasetSize(work.BlockNumberU64())
 
 	return newDagSize != c.dagSize
+}
+
+func (c *OpenCLMiner) Seal2(stop <-chan struct{}, deviceID int, onSolutionFound func(common.Hash, uint64, []byte, uint64)) error {
+	for {
+		select {
+		case <-stop:
+			return nil
+		case <-c.workCh:
+			continue
+		}
+	}
+
+	log.Info("Stopped")
+
+	return nil
 }
 
 // Seal hashes on GPU
@@ -949,8 +932,8 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 			}
 
 			if results.count > 0 {
-				if results.count > maxSearchResults+1 {
-					results.count = maxSearchResults + 1
+				if results.count > maxSearchResults {
+					results.count = maxSearchResults
 				}
 
 				_, err = d.queueWorkers[s.bufIndex].EnqueueReadBuffer(d.searchBuffers[s.bufIndex], true, 0, uint64(results.count*uint32(unsafe.Sizeof(results.rslt[0]))), unsafe.Pointer(&results), nil)
@@ -986,8 +969,8 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 							mix, _ := hashimotoLight(c.dagSize, cache, hh.Bytes(), checkNonce)
 
 							if !bytes.Equal(mix, mixDigest) {
-								fmt.Println("MIX not verified", mix, mixDigest)
-								fmt.Println(results)
+								d.logger.Error("Solution found but not verified", "worker", s.bufIndex,
+									"hash", hh.TerminalString())
 								continue
 							}
 
@@ -1051,11 +1034,16 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 		case <-stop:
 			c.stop = true
 
+			d.Lock()
 			for _, s := range workers {
 				d.queue.EnqueueWriteBuffer(d.searchBuffers[s.bufIndex], true, uint64(unsafe.Offsetof(searchResults{}.abort)), sizeOfUint32, unsafe.Pointer(&abort), nil)
+				d.queue.Finish()
+
 				d.searchKernel[s.bufIndex].SetArg(0, d.searchBuffers[s.bufIndex])
+
 				d.queueWorkers[s.bufIndex].Finish()
 			}
+			d.Unlock()
 
 			searchGroup.Wait()
 
@@ -1089,6 +1077,7 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 
 					d.queue.EnqueueWriteBuffer(
 						d.searchBuffers[s.bufIndex], true, uint64(unsafe.Offsetof(searchResults{}.abort)), sizeOfUint32, unsafe.Pointer(&abort), nil)
+					d.queue.Finish()
 
 					err := d.searchKernel[s.bufIndex].SetArg(0, d.searchBuffers[s.bufIndex])
 					if err != nil {
@@ -1230,17 +1219,6 @@ func (c *OpenCLMiner) SetKernel(values []int) {
 	c.kernels = values
 }
 
-// SetDAGIntensity for all devices
-func (c *OpenCLMiner) SetDAGIntensity(value int) {
-	if value < 4 {
-		value = 4
-	} else if value > 32 {
-		value = 32
-	}
-
-	c.dagIntensity = value
-}
-
 // SetIntensity for each device
 func (c *OpenCLMiner) SetIntensity(values []int) {
 	c.intensity = values
@@ -1321,6 +1299,14 @@ func kernelSource(name string) string {
 	}
 
 	return string(asset)
+}
+
+func createDefinations(m map[string]uint64) string {
+	b := new(bytes.Buffer)
+	for key, value := range m {
+		fmt.Fprintf(b, "#define %s %d\n", key, value)
+	}
+	return b.String()
 }
 
 func gcnSource(name string) ([]byte, error) {

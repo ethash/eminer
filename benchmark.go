@@ -25,8 +25,6 @@ func Benchmark(stopChan chan struct{}) {
 
 	miner.Work = work
 
-	miner.SetDAGIntensity(*flagdagintensity)
-
 	if *flagkernel != "" {
 		miner.SetKernel(argToIntSlice(*flagkernel))
 	}
