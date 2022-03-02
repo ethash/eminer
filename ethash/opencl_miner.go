@@ -11,8 +11,6 @@ import (
 	"math"
 	"math/big"
 	mrand "math/rand"
-	"runtime"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -20,9 +18,12 @@ import (
 
 	"github.com/ethash/eminer/adl"
 	"github.com/ethash/eminer/counter"
+	clbin "github.com/ethash/eminer/ethash/cl"
+	"github.com/ethash/eminer/ethash/gcn"
 	"github.com/ethash/eminer/nvml"
 	"github.com/ethash/go-opencl/cl"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/hako/durafmt"
 	metrics "github.com/rcrowley/go-metrics"
@@ -53,13 +54,14 @@ type OpenCLDevice struct {
 
 	searchBuffers []*cl.MemObject
 
-	searchKernel *cl.Kernel
+	searchKernel []*cl.Kernel
 
 	queue        *cl.CommandQueue
 	queueWorkers []*cl.CommandQueue
 
-	ctx     *cl.Context
-	program *cl.Program
+	ctx           *cl.Context
+	program       *cl.Program
+	binaryProgram *cl.Program
 
 	nonceRand *mrand.Rand // seeded by crypto/rand, see comments where it's initialised
 
@@ -96,14 +98,14 @@ type OpenCLMiner struct {
 
 	workerName string
 
+	binary bool
+
 	stop bool
 
 	SolutionsHashRate metrics.Meter
 	FoundSolutions    metrics.Histogram
 	RejectedSolutions metrics.Counter
 	InvalidSolutions  metrics.Counter
-
-	dagIntensity int
 
 	workCh chan struct{}
 
@@ -125,30 +127,39 @@ type kernel struct {
 	threadCount uint64
 }
 
+type searchResults struct {
+	rslt [maxSearchResults]struct {
+		gid uint32
+		mix [8]uint32
+		pad [7]uint32
+	}
+	count     uint32
+	hashCount uint32
+	abort     uint32
+}
+
 const (
 	sizeOfUint32 = 4
 	sizeOfNode   = 64
 
-	maxSearchResults = 7
+	maxSearchResults = 4
 
 	maxWorkGroupSize = 256
 
-	amdIntensity    = 32
+	amdIntensity    = 16
 	nvidiaIntensity = 8
 
-	defaultSearchBufSize = 1
+	defaultSearchBufSize = 4
 )
 
 var searchBufSize int
 
 var kernels = []*kernel{
-	{id: 1, source: kernelSource("kernel1.cl"), threadCount: 4},
-	{id: 2, source: kernelSource("kernel2.cl"), threadCount: 8},
-	{id: 3, source: kernelSource("kernel3.cl"), threadCount: 2},
+	{id: 1, source: kernelSource("kernel1.cl"), threadCount: 8},
 }
 
 //NewCL func
-func NewCL(deviceIds []int, workerName, version string) *OpenCLMiner {
+func NewCL(deviceIds []int, workerName string, binary bool, version string) *OpenCLMiner {
 	ids := make([]int, len(deviceIds))
 	copy(ids, deviceIds)
 
@@ -160,7 +171,7 @@ func NewCL(deviceIds []int, workerName, version string) *OpenCLMiner {
 		FoundSolutions:    metrics.NewHistogram(metrics.NewUniformSample(1e4)),
 		RejectedSolutions: metrics.NewCounter(),
 		InvalidSolutions:  metrics.NewCounter(),
-		dagIntensity:      8,
+		binary:            binary,
 		workCh:            make(chan struct{}),
 		version:           version,
 		uptime:            time.Now(),
@@ -209,10 +220,6 @@ func (c *OpenCLMiner) InitCL() error {
 	c.cacheSize = cacheSize(blockNum)
 
 	searchBufSize = defaultSearchBufSize
-
-	if runtime.GOOS == "windows" {
-		searchBufSize = 2
-	}
 
 	var wg sync.WaitGroup
 	var errd error
@@ -304,16 +311,9 @@ func (c *OpenCLMiner) initCLDevice(idx, deviceID int, device *cl.Device) error {
 		name = device.Name()
 	}
 
-	kernel := kernels[2] //2T kernel
+	kernel := kernels[0]
 
-	if nvidiaGPU {
-		kernel = kernels[0] //4T kernel
-	}
-
-	if strings.Contains(device.Name(), "1080") {
-		kernel = kernels[1] //8T kernel
-	}
-
+	// if there is more kernel
 	if idx < len(c.kernels) {
 		if c.kernels[idx] > 0 && c.kernels[idx] < 4 {
 			kernel = kernels[c.kernels[idx]-1]
@@ -340,16 +340,15 @@ func (c *OpenCLMiner) initCLDevice(idx, deviceID int, device *cl.Device) error {
 		intensity = 8
 	}
 
-	if intensity > 64 {
-		intensity = 64
+	if intensity > 32 {
+		intensity = 32
 	}
 
 	division := float64(intensity) / 16
-	// factor := uint64((32 / float64(intensity)) + 0.5)
+	factor := uint64((32 / float64(intensity)) + 0.5)
 
 	workGroupSize = uint64(intensity * 8)
-	// globalWorkSize = uint64(math.Exp2(float64(intensity)/division)*float64(workGroupSize)) * factor
-	globalWorkSize = uint64(math.Exp2(float64(intensity)/division) * float64(workGroupSize))
+	globalWorkSize = uint64(math.Exp2(float64(intensity)/division)*float64(workGroupSize)) * factor
 
 	logger.Trace("Intensity", "intensity", intensity, "global", globalWorkSize, "local", workGroupSize, "bufsize", searchBufSize)
 
@@ -361,7 +360,7 @@ func (c *OpenCLMiner) initCLDevice(idx, deviceID int, device *cl.Device) error {
 
 	searchBuffers := make([]*cl.MemObject, searchBufSize)
 	for i := 0; i < searchBufSize; i++ {
-		searchBuff, errsb := context.CreateEmptyBuffer(cl.MemWriteOnly, (1+maxSearchResults)*sizeOfUint32)
+		searchBuff, errsb := context.CreateEmptyBuffer(cl.MemWriteOnly, uint64(unsafe.Sizeof(searchResults{})))
 		if errsb != nil {
 			return fmt.Errorf("search buffer err: %v", errsb)
 		}
@@ -436,6 +435,16 @@ func (c *OpenCLMiner) initCLDevice(idx, deviceID int, device *cl.Device) error {
 		return err
 	}
 
+	d.logger.Info("Created program on device")
+
+	if c.binary && amdGPU {
+		err = c.createBinaryProgramOnDevice(d, workGroupSize)
+		if err != nil {
+			//try source kernel
+			c.binary = false
+		}
+	}
+
 	err = c.generateDAGOnDevice(d)
 	if err != nil {
 		return err
@@ -448,35 +457,70 @@ func (c *OpenCLMiner) initCLDevice(idx, deviceID int, device *cl.Device) error {
 	return nil
 }
 
-func (c *OpenCLMiner) createProgramOnDevice(d *OpenCLDevice) (err error) {
-	deviceVendor := 0
-	if d.nvidiaGPU {
-		deviceVendor = 1
+func (c *OpenCLMiner) createBinaryProgramOnDevice(d *OpenCLDevice, workGroupSize uint64) (err error) {
+	data, err := gcnSource(fmt.Sprintf("ethash_ellesmere_lws%d_exit.bin", workGroupSize))
+	if err != nil {
+		return err
 	}
 
-	kvs := make(map[string]string)
-	kvs["GROUP_SIZE"] = strconv.FormatUint(d.workGroupSize, 10)
-	kvs["DEVICE_VENDOR"] = strconv.Itoa(deviceVendor)
-	kvs["ACCESSES"] = strconv.FormatUint(loopAccesses, 10)
-	kvs["MAX_OUTPUTS"] = strconv.FormatUint(maxSearchResults, 10)
-	kvs["HASH_SIZE"] = strconv.FormatUint(d.workGroupSize/d.kernel.threadCount, 10)
-	kvs["THREADS"] = strconv.FormatUint(d.kernel.threadCount, 10)
-	kernelCode := replaceWords(d.kernel.source, kvs)
-
-	d.program, err = d.ctx.CreateProgramWithSource([]string{kernelCode})
+	d.binaryProgram, err = d.ctx.CreateProgramWithBinary(data, d.device)
 	if err != nil {
 		return fmt.Errorf("program err: %v", err)
 	}
 
-	buildOpts := fmt.Sprintf("-D DAG_SIZE=%d -D LIGHT_SIZE=%d", c.dagSize/mixBytes, c.cacheSize/sizeOfNode)
-	err = d.program.BuildProgram([]*cl.Device{d.device}, buildOpts)
+	buildOpts := "-D FAST_EXIT=1"
+	err = d.binaryProgram.BuildProgram([]*cl.Device{d.device}, buildOpts)
 	if err != nil {
 		return fmt.Errorf("program build err: %v", err)
 	}
 
-	d.searchKernel, err = d.program.CreateKernel("seal")
+	d.searchKernel = make([]*cl.Kernel, searchBufSize)
+	for i := 0; i < searchBufSize; i++ {
+		d.searchKernel[i], err = d.binaryProgram.CreateKernel("search")
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (c *OpenCLMiner) createProgramOnDevice(d *OpenCLDevice) (err error) {
+	deviceVendor := 0
+
+	if d.amdGPU {
+		deviceVendor = 1
+	}
+
+	if d.nvidiaGPU {
+		deviceVendor = 3
+	}
+
+	kvs := make(map[string]uint64)
+	kvs["WORKSIZE"] = d.workGroupSize
+	kvs["PLATFORM"] = uint64(deviceVendor)
+	kvs["ACCESSES"] = uint64(loopAccesses)
+	kvs["MAX_OUTPUTS"] = uint64(maxSearchResults)
+	kvs["DAG_SIZE"] = c.dagSize / mixBytes
+	kvs["LIGHT_SIZE"] = c.cacheSize / sizeOfNode
+	kvs["FAST_EXIT"] = 1
+
+	d.program, err = d.ctx.CreateProgramWithSource([]string{createDefinations(kvs) + d.kernel.source})
 	if err != nil {
-		return fmt.Errorf("searchKernel err: %v", err)
+		return fmt.Errorf("program err: %v", err)
+	}
+
+	err = d.program.BuildProgram([]*cl.Device{d.device}, "")
+	if err != nil {
+		return fmt.Errorf("program build err: %v", err)
+	}
+
+	d.searchKernel = make([]*cl.Kernel, searchBufSize)
+	for i := 0; i < searchBufSize; i++ {
+		d.searchKernel[i], err = d.program.CreateKernel("search")
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -527,17 +571,6 @@ func (c *OpenCLMiner) generateDAGOnDevice(d *OpenCLDevice) error {
 		return fmt.Errorf("writing to cache buf failed: %v", err)
 	}
 
-	factor := float64(c.dagIntensity) / 16
-	dagWorkGroupSize := uint64(c.dagIntensity * 8)
-	dagGlobalWorkSize := uint64(math.Exp2(float64(c.dagIntensity)/factor)) * dagWorkGroupSize / 8
-
-	work := uint64(c.dagSize / sizeOfNode)
-	fullRuns := uint64(work / dagGlobalWorkSize)
-	restWork := uint64(work % dagGlobalWorkSize)
-	if restWork > 0 {
-		fullRuns++
-	}
-
 	d.queue.Finish()
 
 	err = dagKernel.SetArg(1, cacheBuf)
@@ -557,33 +590,50 @@ func (c *OpenCLMiner) generateDAGOnDevice(d *OpenCLDevice) error {
 
 	d.logger.Info("Requiring new DAG on device", "epoch", blockNum/epochLength)
 
-	start := time.Now().UnixNano()
+	startTime := time.Now().UnixNano()
 
-	for i := uint64(0); i < fullRuns; i++ {
-		err = dagKernel.SetArg(0, uint32(i*dagGlobalWorkSize))
+	workItems := uint32(c.dagSize / mixBytes * 2)
+	start := uint32(0)
+	chunk := uint32(10000 * d.workGroupSize)
+
+	for start = 0; start <= workItems-chunk; start += chunk {
+		err = dagKernel.SetArg(0, start)
 		if err != nil {
 			return fmt.Errorf("set arg failed %v", err)
 		}
 
 		_, err = d.queue.EnqueueNDRangeKernel(dagKernel,
 			[]int{0},
-			[]int{int(dagGlobalWorkSize)},
-			[]int{int(dagWorkGroupSize)}, nil)
+			[]int{int(chunk)},
+			[]int{int(d.workGroupSize)}, nil)
 		if err != nil {
 			return fmt.Errorf("enqueue dag kernel failed %v", err)
 		}
 
-		err = d.queue.Finish()
-		if err != nil {
-			return fmt.Errorf("clFinish dag queue failed %v", err)
-		}
-
-		elapsed := time.Now().UnixNano() - start
-		d.logger.Debug("Generating DAG in progress", "epoch", blockNum/epochLength,
-			"percentage", int(100*float64(i+1)/float64(fullRuns)), "elapsed", common.PrettyDuration(elapsed))
+		d.queue.Finish()
 	}
 
-	elapsed := time.Now().UnixNano() - start
+	if start < workItems {
+		groupsLeft := uint32(workItems - start)
+		groupsLeft = (groupsLeft + uint32(d.workGroupSize) - 1) / uint32(d.workGroupSize)
+
+		err = dagKernel.SetArg(0, start)
+		if err != nil {
+			return fmt.Errorf("set arg failed %v", err)
+		}
+
+		_, err = d.queue.EnqueueNDRangeKernel(dagKernel,
+			[]int{0},
+			[]int{int(groupsLeft * uint32(d.workGroupSize))},
+			[]int{int(d.workGroupSize)}, nil)
+		if err != nil {
+			return fmt.Errorf("enqueue dag kernel failed %v", err)
+		}
+
+		d.queue.Finish()
+	}
+
+	elapsed := time.Now().UnixNano() - startTime
 	d.logger.Info("Generated DAG on device", "epoch", blockNum/epochLength, "elapsed", common.PrettyDuration(elapsed))
 
 	cacheBuf.Release()
@@ -604,12 +654,24 @@ func (c *OpenCLMiner) ChangeDAGOnAllDevices() (err error) {
 	for _, d := range c.devices {
 		d.dagBuf1.Release()
 		d.dagBuf2.Release()
-		d.searchKernel.Release()
+		for _, searchKernel := range d.searchKernel {
+			searchKernel.Release()
+		}
 		d.program.Release()
+		if c.binary {
+			d.binaryProgram.Release()
+		}
 
 		err = c.createProgramOnDevice(d)
 		if err != nil {
 			return
+		}
+
+		if c.binary && d.amdGPU {
+			err = c.createBinaryProgramOnDevice(d, d.workGroupSize)
+			if err != nil {
+				return
+			}
 		}
 
 		wg.Add(1)
@@ -635,10 +697,15 @@ func (c *OpenCLMiner) ReleaseAll() {
 	log.Info("Releasing all OpenCL devices")
 
 	for _, d := range c.devices {
-		d.ctx.Release()
 		d.queue.Release()
 		d.program.Release()
-		d.searchKernel.Release()
+		d.ctx.Release()
+		if c.binary {
+			d.binaryProgram.Release()
+		}
+		for _, searchKernel := range d.searchKernel {
+			searchKernel.Release()
+		}
 		d.dagBuf1.Release()
 		d.dagBuf2.Release()
 		d.headerBuf.Release()
@@ -658,10 +725,15 @@ func (c *OpenCLMiner) Release(deviceID int) {
 
 	d.logger.Info("Releasing device", "name", d.name)
 
-	d.ctx.Release()
 	d.queue.Release()
 	d.program.Release()
-	d.searchKernel.Release()
+	d.ctx.Release()
+	if c.binary {
+		d.binaryProgram.Release()
+	}
+	for _, searchKernel := range d.searchKernel {
+		searchKernel.Release()
+	}
 	d.dagBuf1.Release()
 	d.dagBuf2.Release()
 	d.headerBuf.Release()
@@ -680,8 +752,23 @@ func (c *OpenCLMiner) CmpDagSize(work *Work) bool {
 	return newDagSize != c.dagSize
 }
 
+func (c *OpenCLMiner) Seal2(stop <-chan struct{}, deviceID int, onSolutionFound func(common.Hash, uint64, []byte, uint64)) error {
+	for {
+		select {
+		case <-stop:
+			return nil
+		case <-c.workCh:
+			continue
+		}
+	}
+
+	log.Info("Stopped")
+
+	return nil
+}
+
 // Seal hashes on GPU
-func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound func(bool, uint64, []byte, uint64)) error {
+func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound func(common.Hash, uint64, []byte, uint64)) error {
 
 	//may stop requested
 	time.Sleep(1 * time.Millisecond)
@@ -703,7 +790,7 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 	}
 	c.Unlock()
 
-	var zero uint32
+	zero := [3]uint32{0, 0, 0}
 
 	idx := c.getDevice(deviceID)
 	d := c.devices[idx]
@@ -719,50 +806,6 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 
 	maxDeviceRand = segDevice * int64(idx+1)
 
-	_, err := d.queue.EnqueueWriteBuffer(d.headerBuf, false, 0, 32, unsafe.Pointer(&headerHash[0]), nil)
-	if err != nil {
-		d.logger.Error("Error in seal clEnqueueWriterBuffer", "error", err.Error())
-		return err
-	}
-
-	for i := 0; i < searchBufSize; i++ {
-		_, err = d.queue.EnqueueWriteBuffer(d.searchBuffers[i], false, 0, 4, unsafe.Pointer(&zero), nil)
-		if err != nil {
-			d.logger.Error("Error in seal clEnqueueWriterBuffer", "error", err.Error())
-			return err
-		}
-	}
-
-	err = d.queue.Finish()
-	if err != nil {
-		d.logger.Error("Error in seal clFinish", "error", err.Error())
-		return err
-	}
-
-	err = d.searchKernel.SetArg(1, d.headerBuf)
-	if err != nil {
-		d.logger.Error("Error in seal clSetKernelArg 1", "error", err.Error())
-		return err
-	}
-
-	err = d.searchKernel.SetArg(2, d.dagBuf1)
-	if err != nil {
-		d.logger.Error("Error in seal clSetKernelArg 2", "error", err.Error())
-		return err
-	}
-
-	err = d.searchKernel.SetArg(3, d.dagBuf2)
-	if err != nil {
-		d.logger.Error("Error in seal clSetKernelArg 3", "error", err.Error())
-		return err
-	}
-
-	err = d.searchKernel.SetArg(5, target64)
-	if err != nil {
-		d.logger.Error("Error in seal clSetKernelArg 5", "error", err.Error())
-		return err
-	}
-
 	regName := fmt.Sprintf("%s.gpu.%d.hashrate", c.workerName, deviceID)
 
 	metrics.Unregister(regName)
@@ -772,9 +815,25 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 	var searchGroup sync.WaitGroup
 
 	worker := func(s *search) {
-		runtime.LockOSThread()
+		defer searchGroup.Done()
 
-		attempts := uint64(0)
+		err := d.searchKernel[s.bufIndex].SetArg(2, d.dagBuf1)
+		if err != nil {
+			d.logger.Error("Error in seal clSetKernelArg 2", "error", err.Error())
+			return
+		}
+
+		err = d.searchKernel[s.bufIndex].SetArg(3, d.dagBuf2)
+		if err != nil {
+			d.logger.Error("Error in seal clSetKernelArg 3", "error", err.Error())
+			return
+		}
+
+		err = d.searchKernel[s.bufIndex].SetArg(4, uint32(c.dagSize/mixBytes))
+		if err != nil {
+			d.logger.Error("Error in seal clSetKernelArg 4", "error", err.Error())
+			return
+		}
 
 		var minWorkerRand, maxWorkerRand int64
 		segWorker := (maxDeviceRand - minDeviceRand) / int64(searchBufSize)
@@ -787,47 +846,71 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 
 		maxWorkerRand = (segWorker * int64(s.bufIndex+1)) + minDeviceRand
 
-		d.Lock()
-		if extraNonce > 0 {
-			s.startNonce = extraNonce + (uint64(idx*searchBufSize+int(s.bufIndex)) << (64 - 4 - uint64(c.Work.SizeBits)))
-		} else {
-			s.startNonce = uint64(d.nonceRand.Int63n(maxWorkerRand-minWorkerRand) + minWorkerRand)
-		}
-		d.Unlock()
-
-		defer searchGroup.Done()
-
-		var cres *cl.MappedMemObject
+		s.workChanged = true
 
 		for !c.stop {
-			s.headerHash = headerHash
+			var results searchResults
 
 			d.Lock()
+
+			s.headerHash.SetBytes(headerHash[:])
+
 			if s.workChanged {
+				_, err := d.queueWorkers[s.bufIndex].EnqueueWriteBuffer(d.headerBuf, true, 0, 32, unsafe.Pointer(&s.headerHash[0]), nil)
+				if err != nil {
+					d.logger.Error("Error in seal clEnqueueWriterBuffer", "error", err.Error())
+					d.Unlock()
+					continue
+				}
+
+				err = d.searchKernel[s.bufIndex].SetArg(1, d.headerBuf)
+				if err != nil {
+					d.logger.Error("Error in seal clSetKernelArg 1", "error", err.Error())
+					d.Unlock()
+					continue
+				}
+
+				err = d.searchKernel[s.bufIndex].SetArg(6, target64)
+				if err != nil {
+					d.logger.Error("Error in seal clSetKernelArg 6", "error", err.Error())
+					d.Unlock()
+					continue
+				}
+
 				if extraNonce > 0 {
 					s.startNonce = extraNonce + (uint64(idx*searchBufSize+int(s.bufIndex)) << (64 - 4 - uint64(c.Work.SizeBits)))
 				} else {
 					s.startNonce = uint64(d.nonceRand.Int63n(maxWorkerRand-minWorkerRand) + minWorkerRand)
 				}
+
 				s.workChanged = false
+
+				d.logger.Debug("Work changed on GPU", "worker", s.bufIndex, "hash", s.headerHash.TerminalString())
 			}
 
-			err = d.searchKernel.SetArg(0, d.searchBuffers[s.bufIndex])
+			_, err := d.queueWorkers[s.bufIndex].EnqueueWriteBuffer(d.searchBuffers[s.bufIndex], true, uint64(unsafe.Offsetof(results.count)), 3*sizeOfUint32, unsafe.Pointer(&zero[0]), nil)
+			if err != nil {
+				d.logger.Error("Error write in seal clear buffers", "error", err.Error())
+				d.Unlock()
+				continue
+			}
+
+			err = d.searchKernel[s.bufIndex].SetArg(0, d.searchBuffers[s.bufIndex])
 			if err != nil {
 				d.logger.Error("Error in seal clSetKernelArg 0", "error", err.Error())
 				d.Unlock()
 				continue
 			}
 
-			err = d.searchKernel.SetArg(4, s.startNonce)
+			err = d.searchKernel[s.bufIndex].SetArg(5, s.startNonce)
 			if err != nil {
-				d.logger.Error("Error in seal clSetKernelArg 4", "error", err.Error())
+				d.logger.Error("Error in seal clSetKernelArg 5", "error", err.Error())
 				d.Unlock()
 				continue
 			}
 
 			_, err = d.queueWorkers[s.bufIndex].EnqueueNDRangeKernel(
-				d.searchKernel,
+				d.searchKernel[s.bufIndex],
 				[]int{0},
 				[]int{int(d.globalWorkSize)},
 				[]int{int(d.workGroupSize)},
@@ -837,92 +920,102 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 				d.Unlock()
 				continue
 			}
+
 			d.Unlock()
 
-			cres, _, err = d.queueWorkers[s.bufIndex].EnqueueMapBuffer(d.searchBuffers[s.bufIndex], true,
-				cl.MapFlagRead, 0, (1+maxSearchResults)*sizeOfUint32,
-				nil)
+			d.queueWorkers[s.bufIndex].Flush()
+
+			_, err = d.queueWorkers[s.bufIndex].EnqueueReadBuffer(d.searchBuffers[s.bufIndex], true, uint64(unsafe.Offsetof(results.count)), 2*sizeOfUint32, unsafe.Pointer(&results.count), nil)
 			if err != nil {
-				d.logger.Error("Error in seal clEnqueueMapBuffer", "error", err.Error())
+				d.logger.Error("Error read in seal searchBuffer count", "error", err.Error())
 				continue
 			}
 
-			results := cres.ByteSlice()
-			nfound := uint32(math.Min(float64(binary.LittleEndian.Uint32(results)), float64(maxSearchResults)))
-
-			for i := uint32(0); i < nfound; i++ {
-				lo := (i + 1) * sizeOfUint32
-				hi := (i + 2) * sizeOfUint32
-				upperNonce := uint64(binary.LittleEndian.Uint32(results[lo:hi]))
-				checkNonce := s.startNonce + upperNonce
-				if checkNonce != 0 {
-					c.RLock()
-					if !bytes.Equal(s.headerHash.Bytes(), c.Work.HeaderHash.Bytes()) {
-						d.logger.Warn("Stale solution found", "worker", s.bufIndex,
-							"hash", s.headerHash.TerminalString())
-
-						d.roundCount.Empty()
-
-						c.RUnlock()
-						continue
-					}
-					c.RUnlock()
-
-					// We verify that the nonce is indeed a solution by
-					// executing the Ethash verification function (on the CPU).
-					number := c.Work.BlockNumberU64()
-					cache := c.ethash.cache(number)
-					mixDigest, result := hashimotoLight(c.dagSize, cache, s.headerHash.Bytes(), checkNonce)
-
-					if new(big.Int).SetBytes(result).Cmp(target256) <= 0 {
-						d.logger.Info("Solution found and verified", "worker", s.bufIndex,
-							"hash", s.headerHash.TerminalString())
-
-						c.SolutionsHashRate.Mark(c.Work.Difficulty().Int64())
-
-						roundVariance := uint64(100)
-						if c.Work.FixedDifficulty {
-							d.roundCount.Put()
-							roundCount := d.roundCount.Count() * c.Work.MinerDifficulty().Uint64()
-							roundVariance = roundCount * 100 / c.Work.Difficulty().Uint64()
-						}
-
-						go onSolutionFound(true, checkNonce, mixDigest, roundVariance)
-
-						d.roundCount.Empty()
-
-					} else if c.Work.FixedDifficulty {
-						if new(big.Int).SetBytes(result).Cmp(c.Work.MinerTarget) <= 0 {
-							d.roundCount.Put()
-						}
-					} else {
-						d.logger.Error("Found corrupt solution, check your device.")
-						c.InvalidSolutions.Inc(1)
-					}
+			if results.count > 0 {
+				if results.count > maxSearchResults {
+					results.count = maxSearchResults
 				}
-			}
 
-			if nfound > 0 {
-				_, err = d.queueWorkers[s.bufIndex].EnqueueWriteBuffer(d.searchBuffers[s.bufIndex], false, 0, 4, unsafe.Pointer(&zero), nil)
+				_, err = d.queueWorkers[s.bufIndex].EnqueueReadBuffer(d.searchBuffers[s.bufIndex], true, 0, uint64(results.count*uint32(unsafe.Sizeof(results.rslt[0]))), unsafe.Pointer(&results), nil)
 				if err != nil {
-					d.logger.Error("Error in seal clEnqueueWriteBuffer", "error", err.Error())
+					d.logger.Error("Error read in seal searchBuffer results", "error", err.Error())
+					goto done
 				}
+
+				c.RLock()
+				if !bytes.Equal(s.headerHash.Bytes(), c.Work.HeaderHash.Bytes()) {
+					d.logger.Warn("Stale solution found", "worker", s.bufIndex,
+						"hash", s.headerHash.TerminalString())
+
+					d.roundCount.Empty()
+
+					c.RUnlock()
+					goto done
+				}
+				c.RUnlock()
+
+				go func(results *searchResults, startNonce uint64, hh common.Hash) {
+					for i := uint32(0); i < results.count; i++ {
+						upperNonce := uint64(results.rslt[i].gid)
+						checkNonce := startNonce + upperNonce
+						if checkNonce != 0 {
+							mixDigest := make([]byte, common.HashLength)
+							for z, val := range results.rslt[i].mix {
+								binary.LittleEndian.PutUint32(mixDigest[z*4:], val)
+							}
+
+							number := c.Work.BlockNumberU64()
+							cache := c.ethash.cache(number)
+							mix, _ := hashimotoLight(c.dagSize, cache, hh.Bytes(), checkNonce)
+
+							if !bytes.Equal(mix, mixDigest) {
+								d.logger.Error("Solution found but not verified", "worker", s.bufIndex,
+									"hash", hh.TerminalString())
+								continue
+							}
+
+							seed := make([]byte, 40)
+							copy(seed, hh[:])
+							binary.LittleEndian.PutUint64(seed[32:], checkNonce)
+
+							seed = crypto.Keccak512(seed)
+
+							foundTarget := crypto.Keccak256(append(seed, mixDigest...))
+
+							if new(big.Int).SetBytes(foundTarget).Cmp(target256) <= 0 {
+								d.logger.Info("Solution found and verified", "worker", s.bufIndex,
+									"hash", hh.TerminalString())
+
+								c.SolutionsHashRate.Mark(c.Work.Difficulty().Int64())
+
+								roundVariance := uint64(100)
+								if c.Work.FixedDifficulty {
+									d.roundCount.Put()
+									roundCount := d.roundCount.Count() * c.Work.MinerDifficulty().Uint64()
+									roundVariance = roundCount * 100 / c.Work.Difficulty().Uint64()
+								}
+
+								go onSolutionFound(hh, checkNonce, mixDigest, roundVariance)
+
+								d.roundCount.Empty()
+
+							} else if c.Work.FixedDifficulty {
+								if new(big.Int).SetBytes(foundTarget).Cmp(c.Work.MinerTarget) <= 0 {
+									d.roundCount.Put()
+								}
+							} else {
+								d.logger.Error("Found corrupt solution, check your device.")
+								c.InvalidSolutions.Inc(1)
+							}
+						}
+					}
+				}(&results, s.startNonce, s.headerHash)
 			}
 
-			_, err = d.queueWorkers[s.bufIndex].EnqueueUnmapMemObject(d.searchBuffers[s.bufIndex], cres, nil)
-			if err != nil {
-				d.logger.Error("Error in seal clEnqueueUnMapMemObject", "error", err.Error())
-			}
-
-			d.queueWorkers[s.bufIndex].Finish()
-
+		done:
 			s.startNonce = s.startNonce + d.globalWorkSize
 
-			attempts++
-			if attempts == 2 {
-				d.hashRate.Mark(int64(d.globalWorkSize * attempts))
-				attempts = 0
-			}
+			d.hashRate.Mark(int64(results.hashCount * uint32(d.workGroupSize)))
 		}
 	}
 
@@ -934,39 +1027,30 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 		go worker(s)
 	}
 
+	abort := uint32(255)
+
 	for {
 		select {
 		case <-stop:
 			c.stop = true
-			for _, q := range d.queueWorkers {
-				err = q.Finish()
-				if err != nil {
-					d.logger.Error("Error in seal clFinish", "error", err.Error())
-				}
+
+			d.Lock()
+			for _, s := range workers {
+				d.queue.EnqueueWriteBuffer(d.searchBuffers[s.bufIndex], true, uint64(unsafe.Offsetof(searchResults{}.abort)), sizeOfUint32, unsafe.Pointer(&abort), nil)
+				d.queue.Finish()
+
+				d.searchKernel[s.bufIndex].SetArg(0, d.searchBuffers[s.bufIndex])
+
+				d.queueWorkers[s.bufIndex].Finish()
 			}
+			d.Unlock()
 
 			searchGroup.Wait()
 
-			return err
+			return nil
 
 		case <-c.workCh:
 			c.Lock()
-			//if the new target > then current one change immediately
-			if target256.Cmp(c.Work.Target256) > 0 {
-				target256 = new(big.Int).SetBytes(c.Work.Target256.Bytes())
-
-				if !c.Work.FixedDifficulty {
-					target64 = new(big.Int).Rsh(target256, 192).Uint64()
-
-					err = d.searchKernel.SetArg(5, target64)
-					if err != nil {
-						d.logger.Error("Error in seal clSetKernelArg 5", "error", err.Error())
-						c.Unlock()
-						goto done
-					}
-				}
-			}
-
 			if c.Work.ExtraNonce != extraNonce {
 				extraNonce = c.Work.ExtraNonce
 
@@ -977,62 +1061,34 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 				d.Unlock()
 			}
 
+			if target256.Cmp(c.Work.Target256) != 0 {
+				target256 = new(big.Int).SetBytes(c.Work.Target256.Bytes())
+
+				if !c.Work.FixedDifficulty {
+					target64 = new(big.Int).Rsh(target256, 192).Uint64()
+				}
+			}
+
 			if !bytes.Equal(headerHash.Bytes(), c.Work.HeaderHash.Bytes()) {
-				headerHash = c.Work.HeaderHash
-
-				_, err = d.queue.EnqueueWriteBuffer(d.headerBuf, false, 0, 32, unsafe.Pointer(&headerHash[0]), nil)
-				if err != nil {
-					d.logger.Error("Error in seal clEnqueueWriterBuffer", "error", err.Error())
-					c.Unlock()
-					goto done
-				}
-
-				err = d.queue.Finish()
-				if err != nil {
-					d.logger.Error("Error in seal clFinish", "error", err.Error())
-					c.Unlock()
-					goto done
-				}
-
-				//Some pools doesn't accept solutions with old work like nicehash
-				if target256.Cmp(c.Work.Target256) != 0 {
-					target256 = new(big.Int).SetBytes(c.Work.Target256.Bytes())
-
-					if !c.Work.FixedDifficulty {
-						target64 = new(big.Int).Rsh(target256, 192).Uint64()
-
-						err = d.searchKernel.SetArg(5, target64)
-						if err != nil {
-							d.logger.Error("Error in seal clSetKernelArg 5", "error", err.Error())
-							c.Unlock()
-							goto done
-						}
-					}
-				}
-
 				d.Lock()
+				headerHash = c.Work.HeaderHash
 				for _, s := range workers {
 					s.workChanged = true
+
+					d.queue.EnqueueWriteBuffer(
+						d.searchBuffers[s.bufIndex], true, uint64(unsafe.Offsetof(searchResults{}.abort)), sizeOfUint32, unsafe.Pointer(&abort), nil)
+					d.queue.Finish()
+
+					err := d.searchKernel[s.bufIndex].SetArg(0, d.searchBuffers[s.bufIndex])
+					if err != nil {
+						d.logger.Error("Error in seal clSetKernelArg 0", "error", err.Error())
+					}
 				}
 				d.Unlock()
 			}
 			c.Unlock()
 		}
 	}
-
-done:
-	c.stop = true
-
-	for _, q := range d.queueWorkers {
-		err = q.Finish()
-		if err != nil {
-			d.logger.Error("Error in seal clFinish", "error", err.Error())
-		}
-	}
-
-	searchGroup.Wait()
-
-	return err
 }
 
 // WorkChanged function
@@ -1163,17 +1219,6 @@ func (c *OpenCLMiner) SetKernel(values []int) {
 	c.kernels = values
 }
 
-// SetDAGIntensity for all devices
-func (c *OpenCLMiner) SetDAGIntensity(value int) {
-	if value < 4 {
-		value = 4
-	} else if value > 32 {
-		value = 32
-	}
-
-	c.dagIntensity = value
-}
-
 // SetIntensity for each device
 func (c *OpenCLMiner) SetIntensity(values []int) {
 	c.intensity = values
@@ -1248,10 +1293,27 @@ func replaceWords(text string, kvs map[string]string) string {
 }
 
 func kernelSource(name string) string {
-	kernel, err := Asset("cl/" + name)
+	asset, err := clbin.Asset("cl/" + name)
 	if err != nil {
 		return ""
 	}
 
-	return string(kernel)
+	return string(asset)
+}
+
+func createDefinations(m map[string]uint64) string {
+	b := new(bytes.Buffer)
+	for key, value := range m {
+		fmt.Fprintf(b, "#define %s %d\n", key, value)
+	}
+	return b.String()
+}
+
+func gcnSource(name string) ([]byte, error) {
+	asset, err := gcn.Asset("gcn/bin/" + name)
+	if err != nil {
+		return []byte{}, err
+	}
+
+	return asset, nil
 }

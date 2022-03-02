@@ -46,13 +46,11 @@ func Stratum(stopChan <-chan struct{}) {
 		deviceIds = argToIntSlice(*flagmine)
 	}
 
-	miner := ethash.NewCL(deviceIds, *flagworkername, version)
+	miner := ethash.NewCL(deviceIds, *flagworkername, *flaggcn, version)
 
 	miner.Lock()
 	miner.Work = w
 	miner.Unlock()
-
-	miner.SetDAGIntensity(*flagdagintensity)
 
 	if *flagkernel != "" {
 		miner.SetKernel(argToIntSlice(*flagkernel))

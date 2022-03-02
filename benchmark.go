@@ -16,16 +16,14 @@ import (
 func Benchmark(stopChan chan struct{}) {
 	deviceID := *flagbenchmark
 
-	miner := ethash.NewCL([]int{int(deviceID)}, *flagworkername, version)
+	miner := ethash.NewCL([]int{int(deviceID)}, *flagworkername, *flaggcn, version)
 
 	hh := common.BytesToHash(common.FromHex(randomHash()))
 	sh := common.BytesToHash(common.FromHex("0x0000000000000000000000000000000000000000000000000000000000000000"))
-	diff := new(big.Int).SetUint64(9e10)
+	diff := new(big.Int).SetUint64(5e8) // 500 MH
 	work := ethash.NewWork(45, hh, sh, new(big.Int).Div(ethash.MaxUint256, diff), *flagfixediff)
 
 	miner.Work = work
-
-	miner.SetDAGIntensity(*flagdagintensity)
 
 	if *flagkernel != "" {
 		miner.SetKernel(argToIntSlice(*flagkernel))
@@ -65,6 +63,10 @@ func Benchmark(stopChan chan struct{}) {
 					"hashrate", fmt.Sprintf("%.3f Mh/s", miner.GetHashrate(deviceID)/1e6),
 					"temperature", fmt.Sprintf("%.2f C", miner.GetTemperature(deviceID)),
 					"fan", fmt.Sprintf("%.2f%%", miner.GetFanPercent(deviceID)))
+				log.Info("Mining global report", "solutions", miner.FoundSolutions.Count(), "rejected", miner.RejectedSolutions.Count(),
+					"hashrate", fmt.Sprintf("%.3f Mh/s", miner.TotalHashRate()/1e6), "effectivehashrate", fmt.Sprintf("%.3f Mh/s", miner.SolutionsHashRate.RateMean()/1e6),
+					"efficiency", fmt.Sprintf("%.2f%%", 100+(100*(miner.SolutionsHashRate.RateMean()-miner.TotalHashRate())/miner.TotalHashRate())))
+
 			}
 		}
 	}
@@ -76,9 +78,9 @@ func Benchmark(stopChan chan struct{}) {
 		wg.Add(1)
 		defer wg.Done()
 
-		onSolutionFound := func(ok bool, nonce uint64, digest []byte, roundVariance uint64) {
-			if nonce != 0 && ok {
-				log.Debug("Solution details", "digest", common.ToHex(digest), "nonce", hexutil.Uint64(nonce).String())
+		onSolutionFound := func(hh common.Hash, nonce uint64, digest []byte, roundVariance uint64) {
+			if nonce != 0 {
+				log.Info("Solution accepted", "hash", hh.TerminalString(), "digest", common.ToHex(digest), "nonce", hexutil.Uint64(nonce).String())
 
 				miner.FoundSolutions.Update(int64(roundVariance))
 				if *flagfixediff {
@@ -90,12 +92,18 @@ func Benchmark(stopChan chan struct{}) {
 						"mean", formatter(int64(miner.FoundSolutions.Mean())), "min", formatter(miner.FoundSolutions.Min()),
 						"max", formatter(miner.FoundSolutions.Max()))
 				}
-
-				miner.Lock()
-				miner.Work.HeaderHash = common.BytesToHash(common.FromHex(randomHash()))
-				miner.Unlock()
 			}
 		}
+
+		go func() {
+			for {
+				time.Sleep(time.Second)
+				miner.Work.HeaderHash = common.BytesToHash(common.FromHex(randomHash()))
+				miner.WorkChanged()
+
+				log.Info("Work changed, new work", "hash", miner.Work.HeaderHash.TerminalString(), "difficulty", fmt.Sprintf("%.3f GH", float64(miner.Work.Difficulty().Uint64())/1e9))
+			}
+		}()
 
 		miner.Seal(stopSeal, deviceID, onSolutionFound)
 	}

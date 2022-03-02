@@ -21,32 +21,32 @@ import (
 )
 
 var (
-	flaglistdevices  = flag.Bool("L", false, "List GPU devices")
-	flagbenchmark    = flag.Int("B", -1, "Benchmark mode, set device id for benchmark")
-	flagmine         = flag.String("M", "all", "Run mine on selected devices, use comma for multiple devices")
-	flagfarm         = flag.String("F", "http://127.0.0.1:8545", "Farm mode with the work server at URL, use comma for multiple rpc server")
-	flagstratum      = flag.String("S", "", "Stratum mode, use comma for multiple stratum server (example: `<host>:<port>` for nicehash or other stratum servers stratum+tcp://<host>:<port>)")
-	flagworkername   = flag.String("N", "", "Name of your rig, the name will be use on dashboard, json-api, stathat. Some pools require rig name with extra parameter, this name will be send the pools.")
-	flagusername     = flag.String("U", "", "Username for stratum server")
-	flagpassword     = flag.String("P", "", "Password for stratum server")
-	flagintensity    = flag.String("intensity", "", "GPU work size intensity (8-64), use comma for multiple devices (default 32)")
-	flagdagintensity = flag.Int("dag-intensity", 32, "DAG work size intensity (4-32)")
-	flagkernel       = flag.String("kernel", "", "Select kernel for GPU devices, currently 3 kernels available, use comma for multiple devices (1-3)")
-	flagcpus         = flag.Int("cpu", 0, "Set the maximum number of CPUs to use")
-	flaghttp         = flag.String("http", ":8550", "HTTP server for monitoring (read-only) for disable set \"no\"")
-	flagfixediff     = flag.Bool("fixed-diff", false, "Fixed diff for works, round solutions")
-	flagfan          = flag.String("fan-percent", "", "Set fan speed percent on selected devices, use comma for multiple devices (amd devices only)")
-	flagstathat      = flag.String("stathat", "", "Set your stathat email address here to have some basic metrics from stathat.com web site")
-	flagnocolor      = flag.Bool("no-output-color", false, "Disable colorized output log format")
-	flagloglevel     = flag.Int("V", 3, "Log level (0-5)")
-	flagversion      = flag.Bool("v", false, "Version")
+	flaglistdevices = flag.Bool("L", false, "List GPU devices")
+	flagbenchmark   = flag.Int("B", -1, "Benchmark mode, set device id for benchmark")
+	flagmine        = flag.String("M", "all", "Run mine on selected devices, use comma for multiple devices")
+	flagfarm        = flag.String("F", "http://127.0.0.1:8545", "Farm mode with the work server at URL, use comma for multiple rpc server")
+	flagstratum     = flag.String("S", "", "Stratum mode, use comma for multiple stratum server (example: `<host>:<port>` for nicehash or other stratum servers stratum+tcp://<host>:<port>)")
+	flagworkername  = flag.String("N", "", "Name of your rig, the name will be use on dashboard, json-api, stathat. Some pools require rig name with extra parameter, this name will be send the pools.")
+	flagusername    = flag.String("U", "", "Username for stratum server")
+	flagpassword    = flag.String("P", "", "Password for stratum server")
+	flagintensity   = flag.String("intensity", "", "GPU work size intensity (8-64), use comma for multiple devices (default 32)")
+	flagkernel      = flag.String("kernel", "", "(Deprecated) Select kernel for GPU devices, currently 1 kernel available, use comma for multiple devices (1)")
+	flagcpus        = flag.Int("cpu", 0, "Set the maximum number of CPUs to use")
+	flaghttp        = flag.String("http", ":8550", "HTTP server for monitoring (read-only) for disable set \"no\"")
+	flagfixediff    = flag.Bool("fixed-diff", false, "Fixed diff for works, round solutions")
+	flaggcn         = flag.Bool("gcn", false, "Activate binary kernel (amd devices only)")
+	flagfan         = flag.String("fan-percent", "", "Set fan speed percent on selected devices, use comma for multiple devices (amd devices only)")
+	flagstathat     = flag.String("stathat", "", "Set your stathat email address here to have some basic metrics from stathat.com web site")
+	flagnocolor     = flag.Bool("no-output-color", false, "Disable colorized output log format")
+	flagloglevel    = flag.Int("V", 3, "Log level (0-5)")
+	flagversion     = flag.Bool("v", false, "Version")
 
 	flagengineclock = flag.String("engine-clock", "", "Set engine clock on selected devices, use comma for multiple devices (amd devices only)")
 	flagmemoryclock = flag.String("memory-clock", "", "Set memory clock on selected devices, use comma for multiple devices (amd devices only)")
 )
 
 var (
-	version     = "1.1"
+	version     = "2.0-rc1"
 	httpServer  = &http.Server{}
 	virtualTerm = false
 )

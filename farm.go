@@ -25,12 +25,12 @@ func farmMineByDevice(miner *ethash.OpenCLMiner, deviceID int, c client.Client, 
 			case <-stopSealFunc:
 				return
 			case <-time.After(time.Second):
-				onSolutionFound := func(ok bool, nonce uint64, digest []byte, roundVariance uint64) {
+				onSolutionFound := func(hh common.Hash, nonce uint64, digest []byte, roundVariance uint64) {
 					blockNonce := types.EncodeNonce(nonce)
 
 					params := []interface{}{
 						blockNonce,
-						miner.Work.HeaderHash,
+						hh,
 						common.BytesToHash(digest),
 					}
 
@@ -47,10 +47,10 @@ func farmMineByDevice(miner *ethash.OpenCLMiner, deviceID int, c client.Client, 
 
 					res, err := c.SubmitWork(params)
 					if res && err == nil {
-						log.Info("Solution accepted by network", "hash", miner.Work.HeaderHash.TerminalString())
+						log.Info("Solution accepted by network", "hash", hh.TerminalString())
 					} else {
 						miner.RejectedSolutions.Inc(1)
-						log.Error("Solution not accepted by network", "error", err.Error())
+						log.Warn("Solution not accepted by network", "hash", hh.TerminalString(), "error", err.Error())
 					}
 				}
 
@@ -100,13 +100,11 @@ func Farm(stopChan <-chan struct{}) {
 		deviceIds = argToIntSlice(*flagmine)
 	}
 
-	miner := ethash.NewCL(deviceIds, *flagworkername, version)
+	miner := ethash.NewCL(deviceIds, *flagworkername, *flaggcn, version)
 
 	miner.Lock()
 	miner.Work = w
 	miner.Unlock()
-
-	miner.SetDAGIntensity(*flagdagintensity)
 
 	if *flagkernel != "" {
 		miner.SetKernel(argToIntSlice(*flagkernel))

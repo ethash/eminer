@@ -1,7 +1,11 @@
-all: opencl_kernels.go
+all: cl.go gcn.go
 
-opencl_kernels.go:
-	go-bindata -o opencl_kernels.go -pkg ethash cl/kernel1.cl cl/kernel2.cl cl/kernel3.cl
+cl.go:
+	go-bindata -o cl -split -pkg cl cl/kernel1.cl
+
+gcn.go:
+	go-bindata -o gcn -split 	-pkg gcn gcn/bin/*
 
 clean:
-	rm -rf opencl_kernels.go
+	rm -rf cl/*.go
+	rm -rf gcn/*.go
