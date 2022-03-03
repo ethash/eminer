@@ -13,6 +13,7 @@ require (
 	github.com/hashicorp/golang-lru v0.5.4 // indirect
 	github.com/rcrowley/go-metrics v0.0.0-20201227073835-cf1acfcdf475
 	github.com/rs/cors v1.8.0 // indirect
+	github.com/shuLhan/go-bindata v4.0.0+incompatible // indirect
 	github.com/stathat/go v1.0.0 // indirect
 	github.com/syndtr/goleveldb v1.0.0 // indirect
 	golang.org/x/net v0.0.0-20210726213435-c6fcb2dbf985 // indirect

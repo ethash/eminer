@@ -30,7 +30,7 @@ func bindataGcnBinEthashgfx906lws256Bin() (*asset, error) {
 		size: 9688,
 		md5checksum: "",
 		mode: os.FileMode(420),
-		modTime: time.Unix(1630155171, 0),
+		modTime: time.Unix(1646260731, 0),
 	}
 
 	a := &asset{bytes: bytes, info: info}
