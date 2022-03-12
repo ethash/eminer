@@ -75,6 +75,8 @@ type OpenCLDevice struct {
 	globalWorkSize uint64
 	workGroupSize  uint64
 
+	workCh chan struct{}
+
 	roundCount counter.Counter
 
 	logger log.Logger
@@ -106,8 +108,6 @@ type OpenCLMiner struct {
 	FoundSolutions    metrics.Histogram
 	RejectedSolutions metrics.Counter
 	InvalidSolutions  metrics.Counter
-
-	workCh chan struct{}
 
 	version string
 
@@ -172,7 +172,6 @@ func NewCL(deviceIds []int, workerName string, binary bool, version string) *Ope
 		RejectedSolutions: metrics.NewCounter(),
 		InvalidSolutions:  metrics.NewCounter(),
 		binary:            binary,
-		workCh:            make(chan struct{}),
 		version:           version,
 		uptime:            time.Now(),
 	}
@@ -420,6 +419,8 @@ func (c *OpenCLMiner) initCLDevice(idx, deviceID int, device *cl.Device) error {
 		kernel:         kernel,
 		workGroupSize:  workGroupSize,
 		globalWorkSize: globalWorkSize,
+
+		workCh: make(chan struct{}),
 
 		logger: logger,
 	}
@@ -752,21 +753,6 @@ func (c *OpenCLMiner) CmpDagSize(work *Work) bool {
 	return newDagSize != c.dagSize
 }
 
-func (c *OpenCLMiner) Seal2(stop <-chan struct{}, deviceID int, onSolutionFound func(common.Hash, uint64, []byte, uint64)) error {
-	for {
-		select {
-		case <-stop:
-			return nil
-		case <-c.workCh:
-			continue
-		}
-	}
-
-	log.Info("Stopped")
-
-	return nil
-}
-
 // Seal hashes on GPU
 func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound func(common.Hash, uint64, []byte, uint64)) error {
 
@@ -1049,7 +1035,7 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 
 			return nil
 
-		case <-c.workCh:
+		case <-d.workCh:
 			c.Lock()
 			if c.Work.ExtraNonce != extraNonce {
 				extraNonce = c.Work.ExtraNonce
@@ -1093,7 +1079,9 @@ func (c *OpenCLMiner) Seal(stop <-chan struct{}, deviceID int, onSolutionFound f
 
 // WorkChanged function
 func (c *OpenCLMiner) WorkChanged() {
-	c.workCh <- struct{}{}
+        for _, d := range c.devices {
+		d.workCh <- struct{}{}
+        }
 }
 
 // GetHashrate for device
